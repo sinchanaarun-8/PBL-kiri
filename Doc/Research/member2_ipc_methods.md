@@ -1,4 +1,6 @@
 
+member -2 josna
+
 Inter-Process Communication (IPC) provides different methods that allow processes to communicate, exchange data, or synchronize their activities.
 
 1. Pipes
