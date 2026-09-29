@@ -1,4 +1,8 @@
-member -04 jishnu
+# IPC PROGRAMMING LANGUAGE SELECTION
+
+**Project:** PBL-kiri  
+**Research Area:** Inter-Process Communication (IPC)  
+**Research Member:** Member 04 **Jishnu**
 
 Language/Technology Selection for Implementing the Project
 
@@ -65,33 +69,10 @@ Limitations:
 
 6. Comparison Criteria
 
-Criteria| Python| C/C++| Java
-Performance| Good| Very high| Good
-OS-level IPC support| Good| Very strong| Good
-Development complexity| Low| High| Medium
-Portability| Good| Good| Very high
-Libraries/APIs| Strong built-in support| Strong OS APIs| Strong libraries
+Criteria                 | Python| C/C++      | Java
+Performance              | Good  | Very high  | Good
+OS-level IPC support     | Good  | Very strong| Good
+Development complexity   | Low   | High       | Medium
+Portability              | Good  | Good       | Very high
+Libraries/APIs|Strong built-in support| Strong OS APIs| Strong libraries
 
-7. Final Selection Criteria
-
-The final language should provide:
-
-- Easy implementation.
-- Good IPC support.
-- Shared memory and synchronization facilities.
-- Simple process management.
-- Reasonable portability.
-- Easy testing and demonstration.
-
-8. Project-Specific Recommendation
-
-Python is selected for this project because it provides suitable built-in facilities for multiprocessing, shared memory, and synchronization while keeping the implementation relatively simple. Python's "multiprocessing" module supports shared memory and synchronization objects such as semaphores and locks.
-
-This makes Python suitable for demonstrating IPC concepts such as shared memory, semaphores, process creation, synchronization, and data exchange.
-
-9. References
-
-1. Python Documentation – "multiprocessing" module.
-2. Python Documentation – "multiprocessing.shared_memory".
-3. Linux man-pages – POSIX semaphore overview.
-4. Linux man-pages – System V IPC mechanisms.
