@@ -1,0 +1,6 @@
+[INFO] Logger started
+[INFO] Instruction executed: LOAD
+[INFO] Instruction executed: ADD
+[WARNING] Stack is almost full
+[ERROR] Invalid instruction: XYZ
+[INFO] Program completed
