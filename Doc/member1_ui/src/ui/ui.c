@@ -15,6 +15,9 @@ int main(void)
     printf("5. Exit\n");
 
     printf("\nEnter choice: ");
+    int choice;
+    scanf("%d", &choice);
+    printf("\nYou selected: %d\n", choice);
 
     return 0;
 }
