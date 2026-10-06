@@ -1,16 +1,20 @@
-# Yeregav Kirikiri
-# The Problem Based Learning 
+# Yeregav Kirikiri 
+--------------------------------------------------------------------------------------------------------------
+## PBL - Multi-Process Simulator
+
+## Overview
+
+ A C-based multi-process simulator developed for Problem Based Learning. The system demonstrates process coordination and Inter-Process Communication (IPC) using **POSIX Message Queues** on a POSIX/Linux environment.
+
+The simulator is divided into three independent processes:
+
+- **UI Process** — accepts user commands and displays responses.
+- **Core Process** — performs CPU, memory, stack and queue operations.
+- **Logging Process** — receives and stores execution events.
+
+A separate IPC layer connects these processes.
+
 ## System Architecture
-
-The project uses a three-process architecture implemented in C on a POSIX/Linux environment.
-
-The three independent processes are:
-
-- **UI Process** – Handles user input and displays simulator status and results.
-- **Core Process** – Performs the main simulator operations, including CPU execution, memory management, stack operations, and queue operations.
-- **Logging Process** – Records execution events, warnings, and errors.
-
-### Architecture Diagram
 
 ```text
                          USER
@@ -18,94 +22,89 @@ The three independent processes are:
                            v
                   +-------------------+
                   |    UI PROCESS     |
-                  |       (C)         |
+                  |        (C)        |
+                  |  Terminal Input   |
                   +-------------------+
                            |
-                           | Command Messages
-                           | RUN, STOP, RESET,
-                           | LOAD_PROGRAM
-                           v
-                  +-------------------+
-                  |   POSIX MESSAGE   |
-                  |      QUEUE        |
-                  +-------------------+
-                           |
+                           | UI → Core
+                           | POSIX MQ
                            v
                   +-------------------+
                   |   CORE PROCESS    |
-                  |       (C)         |
+                  |        (C)        |
                   |                   |
                   |   CPU Execution   |
                   | Memory Management |
                   | Stack Operations  |
                   | Queue Operations  |
                   +-------------------+
-                           |
-                           | Event / Log Messages
-                           v
-                  +-------------------+
-                  | LOGGING PROCESS   |
-                  |       (C)         |
-                  +-------------------+
-                           |
-                           v
-                  Execution and Error Logs
+                       |           |
+                       |           |
+              Core → UI|           |Core → Logger
+               POSIX MQ|           |POSIX MQ
+                       |           |
+                       v           v
+                  +----------+   +-------------------+
+                  |   UI     |   | LOGGING PROCESS   |
+                  | RESPONSE |   |        (C)        |
+                  +----------+   +-------------------+
+                                      |
+                                      v
+                              +--------------------+
+                              | logs/simulator.log |
+                              +--------------------+
 
------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------
 
-# Member 1 — UI Process
+## IPC Channels
+The project uses three POSIX message queues:
 
-## Responsibility
+|       Queue           |              Purpose                  |
+|-----------------------|---------------------------------------|
+|                       | UI sends commands to Core             |
+|                       | Core sends responses to UI            |
+|                       | Core sends log messages to Logger     |
 
-Member 1 is responsible for the User Interface Process of the
-PBL Multi-Process Simulator.
 
-## Current Version
 
-UI V1 — Terminal-Based Interface
+## Core Simulation
 
-## Implemented Features
+The Core Process integrates:
 
-- Simulator title display
-- System status display
-- Menu display
-- User input
-- Input validation
-- Invalid choice handling
-- Logical command mapping
-- Repeated menu operation
-- Exit handling
+- CPU execution
+- Memory management
+- Stack operations
+- Queue operations
+- Program loading and execution
+- Run, stop and reset operations
 
-## Menu
 
-1. Load Program
-2. Run Program
-3. Stop Program
-4. Reset Simulator
-5. Exit
+## Team Work
 
-## Command Mapping
-
-| Choice | Command |
-|---|---|
-| 1 | LOAD |
-| 2 | RUN |
-| 3 | STOP |
-| 4 | RESET |
-| 5 | EXIT |
-
-## Current IPC Status
-
-POSIX Message Queue integration is not implemented in UI V1.
-
-The UI currently generates logical commands locally.
-
-IPC integration will be performed later after the
-team communication protocol is finalized.
+| Member             | Responsibility             |
+|--------------------|----------------------------|
+| Member 1 - Jishnu  | UI Process                 |
+| Member 2 - Aahil   | Core Process               |
+| Member 3 - Joshna  | Logging Process            |
+| Member 4 - Sinchana| IPC and system integration | - Team Lead 
 
 ## Technology
 
-- Language: C
-- Environment: POSIX/Linux/macOS development environment
-- UI: Terminal
-- Future IPC: POSIX Message Queue
+- **Language:** C
+- **Platform:** POSIX/Linux
+- **IPC:** POSIX Message Queues
+- **Interface:** Terminal
+- **Logging:** File-based logging
+
+## Repository Structure
+
+PBL-/
+├── README.md
+└── week2/
+    ├── ui/
+    │   
+    ├── core/
+    │    
+    ├── logger/
+    │   
+    └── ipc/
