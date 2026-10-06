@@ -16,7 +16,7 @@ int main(void)
 
     if (core_pid == 0)
     {
-        execl("/tmp/core_process", "core_process", (char *)NULL);
+       execl("./build/core_process", "core_process", (char *)NULL);
         perror("Failed to start Core");
         exit(EXIT_FAILURE);
     }
@@ -33,7 +33,7 @@ int main(void)
 
     if (logger_pid == 0)
     {
-        execl("/tmp/logger_process", "logger_process", (char *)NULL);
+        execl("./build/logger_process", "logger_process", (char *)NULL);
         perror("Failed to start Logger");
         exit(EXIT_FAILURE);
     }
@@ -50,7 +50,7 @@ int main(void)
 
     if (ui_pid == 0)
     {
-        execl("/tmp/ui_process", "ui_process", (char *)NULL);
+        execl("./build/ui_process", "ui_process", (char *)NULL);
         perror("Failed to start UI");
         exit(EXIT_FAILURE);
     }
