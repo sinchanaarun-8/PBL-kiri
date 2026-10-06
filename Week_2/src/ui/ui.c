@@ -3,9 +3,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <ctype.h>
+#include <fcntl.h>
 
 #include "ui.h"
-
+#include "../IPC/ipc.h"
 
 /* Display the simulator header and current status */
 static void display_header(void)
@@ -140,6 +141,35 @@ int main(void)
     int input_status;
     UICommand command;
 
+    mqd_t ui_to_core;
+    mqd_t core_to_ui;
+    IPCMessage message;
+    IPCMessage response;
+    ui_to_core = ipc_open_queue(
+        UI_TO_CORE_QUEUE,
+        O_WRONLY,
+        0
+    );
+
+    if (ui_to_core == (mqd_t)-1)
+    {
+        perror("Failed to open UI -> Core queue");
+        return 1;
+    }
+
+    core_to_ui = ipc_open_queue(
+        CORE_TO_UI_QUEUE,
+        O_RDONLY,
+        0
+    );
+
+    if (core_to_ui == (mqd_t)-1)
+    {
+        perror("Failed to open Core -> UI queue");
+        mq_close(ui_to_core);
+        return 1;
+    }
+
     while (1)
     {
         display_header();
@@ -191,6 +221,27 @@ int main(void)
          * can be passed to the Core Process through IPC.
          */
         printf("\nCommand: %s\n", command_to_string(command));
+        message.type = IPC_MSG_COMMAND;
+        message.command = command;
+        message.status = 0;
+        message.text[0] = '\0';
+
+        if (!ipc_send(ui_to_core, &message))
+        {
+            perror("Failed to send command to Core");
+            break;
+        }
+
+        if (!ipc_receive(core_to_ui, &response))
+        {
+            perror("Failed to receive response from Core");
+            break;
+        }
+
+        printf(
+            "Core response: %s\n",
+            response.text
+        );
 
         /*
          * Exit the simulator.
@@ -201,6 +252,8 @@ int main(void)
             break;
         }
     }
+    mq_close(ui_to_core);
+    mq_close(core_to_ui);
 
     return 0;
 }

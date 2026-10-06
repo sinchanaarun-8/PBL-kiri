@@ -57,24 +57,3 @@ void logger_close(void)
     }
 }
 
-int main(void)
-{
-    if (!logger_init())
-    {
-        return 1;
-    }
-
-    log_info("Logger started");
-    log_info("Instruction executed: LOAD");
-    log_info("Instruction executed: ADD");
-
-    log_warning("Stack is almost full");
-
-    log_error("Invalid instruction: XYZ");
-
-    log_info("Program completed");
-
-    logger_close();
-
-    return 0;
-}
