@@ -1,223 +1,449 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MEMORY_SIZE 100
-#define STACK_SIZE 50
-#define QUEUE_SIZE 50
+#include "core.h"
 
-/* ---------------- CPU ---------------- */
 
-typedef struct
+static void clear_program(CoreState *core)
 {
-    int program_counter;
-    int accumulator;
-    int halted;
-} CPU;
+    size_t i;
 
-/* ---------------- STACK ---------------- */
-
-typedef struct
-{
-    int data[STACK_SIZE];
-    int top;
-} Stack;
-
-/* ---------------- QUEUE ---------------- */
-
-typedef struct
-{
-    int data[QUEUE_SIZE];
-    int front;
-    int rear;
-    int count;
-} Queue;
-
-/* ---------------- CORE STATE ---------------- */
-
-int memory[MEMORY_SIZE];
-CPU cpu;
-Stack stack;
-Queue queue;
-
-/* ---------------- MEMORY ---------------- */
-
-void memory_init(void)
-{
-    for (int i = 0; i < MEMORY_SIZE; i++)
+    for (i = 0; i < CORE_PROGRAM_SIZE; i++)
     {
-        memory[i] = 0;
+        core->program[i][0] = '\0';
     }
+
+    core->program_size = 0;
 }
 
-void memory_write(int address, int value)
+
+void core_init(CoreState *core)
 {
-    if (address < 0 || address >= MEMORY_SIZE)
+    if (core == NULL)
     {
-        printf("[ERROR] Invalid memory address: %d\n", address);
         return;
     }
 
-    memory[address] = value;
+    cpu_init(&core->cpu);
+    memory_init(&core->memory);
+    stack_init(&core->stack);
+    queue_init(&core->queue);
+
+    clear_program(core);
 }
 
-int memory_read(int address)
+
+void core_reset(CoreState *core)
 {
-    if (address < 0 || address >= MEMORY_SIZE)
+    core_init(core);
+}
+
+
+int core_load_default_program(CoreState *core)
+{
+    static const char *default_program[] =
     {
-        printf("[ERROR] Invalid memory address: %d\n", address);
+        "LOAD 10",
+        "ADD 20",
+        "PUSH 30",
+        "POP",
+        "HALT"
+    };
+
+    size_t count;
+    size_t i;
+
+    if (core == NULL)
+    {
         return 0;
     }
 
-    return memory[address];
-}
+    count =
+        sizeof(default_program) /
+        sizeof(default_program[0]);
 
-/* ---------------- STACK ---------------- */
-
-void stack_init(void)
-{
-    stack.top = -1;
-}
-
-void stack_push(int value)
-{
-    if (stack.top >= STACK_SIZE - 1)
+    if (count > CORE_PROGRAM_SIZE)
     {
-        printf("[ERROR] Stack overflow\n");
-        return;
-    }
-
-    stack.data[++stack.top] = value;
-}
-
-int stack_pop(void)
-{
-    if (stack.top < 0)
-    {
-        printf("[ERROR] Stack underflow\n");
         return 0;
     }
 
-    return stack.data[stack.top--];
-}
+    clear_program(core);
 
-/* ---------------- QUEUE ---------------- */
-
-void queue_init(void)
-{
-    queue.front = 0;
-    queue.rear = -1;
-    queue.count = 0;
-}
-
-void queue_enqueue(int value)
-{
-    if (queue.count >= QUEUE_SIZE)
+    for (i = 0; i < count; i++)
     {
-        printf("[ERROR] Queue overflow\n");
-        return;
+        strncpy(
+            core->program[i],
+            default_program[i],
+            CORE_INSTRUCTION_SIZE - 1
+        );
+
+        core->program[i][CORE_INSTRUCTION_SIZE - 1] =
+            '\0';
     }
 
-    queue.rear = (queue.rear + 1) % QUEUE_SIZE;
-    queue.data[queue.rear] = value;
-    queue.count++;
+    core->program_size = count;
+
+    cpu_reset(&core->cpu);
+
+    return 1;
 }
 
-int queue_dequeue(void)
+
+int core_execute(
+    CoreState *core,
+    const char *instruction)
 {
+    char command[16];
     int value;
+    int address;
+    int result;
 
-    if (queue.count == 0)
+    if (core == NULL ||
+        instruction == NULL)
     {
-        printf("[ERROR] Queue underflow\n");
         return 0;
     }
 
-    value = queue.data[queue.front];
-    queue.front = (queue.front + 1) % QUEUE_SIZE;
-    queue.count--;
+    command[0] = '\0';
 
-    return value;
-}
+    if (sscanf(
+            instruction,
+            "%15s",
+            command) != 1)
+    {
+        return 0;
+    }
 
-/* ---------------- CPU ---------------- */
 
-void cpu_init(void)
-{
-    cpu.program_counter = 0;
-    cpu.accumulator = 0;
-    cpu.halted = 0;
-}
+    /*
+     * CPU instructions
+     */
+    if (strcmp(command, "LOAD") == 0 ||
+        strcmp(command, "ADD") == 0 ||
+        strcmp(command, "SUB") == 0 ||
+        strcmp(command, "MUL") == 0 ||
+        strcmp(command, "DIV") == 0 ||
+        strcmp(command, "HALT") == 0)
+    {
+        return cpu_execute(
+            &core->cpu,
+            instruction
+        );
+    }
 
-/* ---------------- CORE ---------------- */
 
-void core_init(void)
-{
-    cpu_init();
-    memory_init();
-    stack_init();
-    queue_init();
-}
+    /*
+     * Memory instructions
+     */
+    if (strcmp(command, "STORE") == 0)
+    {
+        if (sscanf(
+                instruction,
+                "%15s %d %d",
+                command,
+                &address,
+                &value) != 3)
+        {
+            return 0;
+        }
 
-/* ---------------- DEMONSTRATION ---------------- */
+        return memory_write(
+            &core->memory,
+            address,
+            value
+        );
+    }
 
-void run_core_demo(void)
-{
-    printf("\n=====================================\n");
-    printf("       PBL CORE PROCESS\n");
-    printf("=====================================\n");
 
-    printf("\n[CPU] Loading value 10...\n");
-    cpu.accumulator = 10;
-    cpu.program_counter++;
+    if (strcmp(command, "READ") == 0)
+    {
+        if (sscanf(
+                instruction,
+                "%15s %d",
+                command,
+                &address) != 2)
+        {
+            return 0;
+        }
 
-    printf("[CPU] ACC = %d\n", cpu.accumulator);
+        result = memory_read(
+            &core->memory,
+            address
+        );
 
-    printf("\n[CPU] Adding 20...\n");
-    cpu.accumulator += 20;
-    cpu.program_counter++;
+        if (result == -1)
+        {
+            return 0;
+        }
 
-    printf("[CPU] ACC = %d\n", cpu.accumulator);
+        printf(
+            "Memory[%d] = %d\n",
+            address,
+            result
+        );
 
-    printf("\n[MEMORY] Storing ACC at address 10...\n");
-    memory_write(10, cpu.accumulator);
+        return 1;
+    }
 
-    printf("[MEMORY] Memory[10] = %d\n", memory_read(10));
 
-    printf("\n[STACK] Pushing ACC...\n");
-    stack_push(cpu.accumulator);
+    /*
+     * Stack instructions
+     */
+    if (strcmp(command, "PUSH") == 0)
+    {
+        if (sscanf(
+                instruction,
+                "%15s %d",
+                command,
+                &value) != 2)
+        {
+            return 0;
+        }
 
-    printf("[STACK] Popping value...\n");
-    cpu.accumulator = stack_pop();
+        return stack_push(
+            &core->stack,
+            value
+        );
+    }
 
-    printf("[STACK] ACC = %d\n", cpu.accumulator);
 
-    printf("\n[QUEUE] Enqueueing values...\n");
-    queue_enqueue(10);
-    queue_enqueue(20);
-    queue_enqueue(30);
+    if (strcmp(command, "POP") == 0)
+    {
+        if (!stack_pop(
+                &core->stack,
+                &result))
+        {
+            return 0;
+        }
 
-    printf("[QUEUE] Dequeued value = %d\n", queue_dequeue());
+        printf(
+            "Popped %d\n",
+            result
+        );
 
-    printf("\n[CPU] Halting...\n");
-    cpu.halted = 1;
+        return 1;
+    }
 
-    printf("\n=====================================\n");
-    printf("       CORE EXECUTION COMPLETE\n");
-    printf("=====================================\n");
 
-    printf("Program Counter : %d\n", cpu.program_counter);
-    printf("Accumulator     : %d\n", cpu.accumulator);
-    printf("Memory[10]      : %d\n", memory_read(10));
-    printf("CPU Status      : %s\n", cpu.halted ? "HALTED" : "RUNNING");
-}
+    if (strcmp(command, "PEEK") == 0)
+    {
+        if (!stack_peek(
+                &core->stack,
+                &result))
+        {
+            return 0;
+        }
 
-/* ---------------- MAIN ---------------- */
+        printf(
+            "Stack top = %d\n",
+            result
+        );
 
-int main(void)
-{
-    core_init();
+        return 1;
+    }
 
-    run_core_demo();
+
+    /*
+     * Queue instructions
+     */
+    if (strcmp(command, "ENQUEUE") == 0)
+    {
+        if (sscanf(
+                instruction,
+                "%15s %d",
+                command,
+                &value) != 2)
+        {
+            return 0;
+        }
+
+        return queue_enqueue(
+            &core->queue,
+            value
+        );
+    }
+
+
+    if (strcmp(command, "DEQUEUE") == 0)
+    {
+        if (!queue_dequeue(
+                &core->queue,
+                &result))
+        {
+            return 0;
+        }
+
+        printf(
+            "Dequeued %d\n",
+            result
+        );
+
+        return 1;
+    }
+
+
+    if (strcmp(command, "QPEEK") == 0)
+    {
+        if (!queue_peek(
+                &core->queue,
+                &result))
+        {
+            return 0;
+        }
+
+        printf(
+            "Queue front = %d\n",
+            result
+        );
+
+        return 1;
+    }
+
+
+    printf(
+        "Core: Unknown instruction: %s\n",
+        command
+    );
 
     return 0;
+}
+
+
+int core_run(CoreState *core)
+{
+    size_t i;
+
+    if (core == NULL ||
+        core->program_size == 0)
+    {
+        return 0;
+    }
+
+    core->cpu.active = 1;
+
+    for (i = 0;
+         i < core->program_size &&
+         core->cpu.active;
+         i++)
+    {
+        if (!core_execute(
+                core,
+                core->program[i]))
+        {
+            core->cpu.active = 0;
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+
+int core_stop(CoreState *core)
+{
+    if (core == NULL)
+    {
+        return 0;
+    }
+
+    cpu_stop(&core->cpu);
+
+    return 1;
+}
+
+
+int core_process_command(
+    CoreState *core,
+    CoreCommand command)
+{
+    if (core == NULL)
+    {
+        return 0;
+    }
+
+    switch (command)
+    {
+        case CORE_CMD_LOAD:
+
+            return core_load_default_program(core);
+
+
+        case CORE_CMD_RUN:
+
+            return core_run(core);
+
+
+        case CORE_CMD_STOP:
+
+            return core_stop(core);
+
+
+        case CORE_CMD_RESET:
+
+            core_reset(core);
+            return 1;
+
+
+        case CORE_CMD_EXIT:
+
+            core_stop(core);
+            return 1;
+
+
+        default:
+
+            return 0;
+    }
+}
+
+
+void core_print_state(
+    const CoreState *core)
+{
+    if (core == NULL)
+    {
+        return;
+    }
+
+    printf("\n");
+    printf("========== CORE STATE ==========\n");
+
+    printf(
+        "ACC           : %d\n",
+        core->cpu.acc
+    );
+
+    printf(
+        "PC            : %d\n",
+        core->cpu.pc
+    );
+
+    printf(
+        "CPU Active    : %s\n",
+        core->cpu.active ? "YES" : "NO"
+    );
+
+    printf(
+        "Program Size  : %zu\n",
+        core->program_size
+    );
+
+    printf(
+        "Stack Items   : %d\n",
+        core->stack.top + 1
+    );
+
+    printf(
+        "Queue Items   : %d\n",
+        core->queue.count
+    );
+
+    printf(
+        "Memory[0]     : %d\n",
+        core->memory.data[0]
+    );
+
+    printf(
+        "================================\n"
+    );
 }
