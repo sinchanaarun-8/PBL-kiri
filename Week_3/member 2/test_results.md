@@ -1,4 +1,4 @@
-# Member 2 - josna- Process Scheduling Algorithms
+# Member 2- Process Scheduling Algorithms
 
 ## 1. SJF Preemptive (SRTF)
 
