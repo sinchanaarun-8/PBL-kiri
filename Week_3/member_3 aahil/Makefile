@@ -3,7 +3,7 @@ CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Iinclude
 
 TARGET = build/scheduler
-SOURCES = src/main.c src/srtf.c src/round_robin.c
+SOURCES = src/main.c src/basic_scheduling.c src/srtf.c src/round_robin.c
 
 .PHONY: all clean run
 

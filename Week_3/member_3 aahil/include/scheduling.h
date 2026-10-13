@@ -1,4 +1,3 @@
-
 #ifndef SCHEDULING_H
 #define SCHEDULING_H
 
@@ -10,7 +9,6 @@ typedef struct {
     int arrival_time;
     int burst_time;
     int priority;
-
     int remaining_time;
     int completion_time;
     int turnaround_time;
@@ -30,26 +28,13 @@ typedef struct {
     int count;
 } GanttChart;
 
-/* SRTF: Shortest Remaining Time First */
-int schedule_srtf(
-    Process processes[],
-    int n,
-    GanttChart *chart
-);
+int schedule_fcfs(Process processes[], int n, GanttChart *chart);
+int schedule_sjf_non_preemptive(Process processes[], int n, GanttChart *chart);
+int schedule_priority_non_preemptive(Process processes[], int n, GanttChart *chart);
+int schedule_srtf(Process processes[], int n, GanttChart *chart);
+int schedule_priority_preemptive(Process processes[], int n, GanttChart *chart);
+int schedule_round_robin(Process processes[], int n, int time_quantum, GanttChart *chart);
 
-/* Round Robin with configurable time quantum */
-int schedule_round_robin(
-    Process processes[],
-    int n,
-    int time_quantum,
-    GanttChart *chart
-);
-
-/* Display scheduling results */
-void display_results(
-    const Process processes[],
-    int n,
-    const GanttChart *chart
-);
+void display_results(const Process processes[], int n, const GanttChart *chart);
 
 #endif
