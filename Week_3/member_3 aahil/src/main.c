@@ -4,6 +4,14 @@
 #include "../include/scheduling.h"
 
 typedef int (*Scheduler)(Process[], int, GanttChart *);
+typedef struct {
+    char name[40];
+    double avg_wt;
+    double avg_tat;
+    double avg_rt;
+    double cpu_util;
+} ComparisonResult;
+
 
 static int compare_pid(const void *a, const void *b)
 {
@@ -11,7 +19,33 @@ static int compare_pid(const void *a, const void *b)
     const Process *y = b;
     return (x->pid > y->pid) - (x->pid < y->pid);
 }
+static void calculate_metrics(
+    const Process p[], int n, const GanttChart *chart,
+    ComparisonResult *result
+)
+{
+    double total_wt = 0, total_tat = 0, total_rt = 0;
+    double total_burst = 0;
+    int last_completion = 0;
 
+    for (int i = 0; i < n; i++) {
+        total_wt += p[i].waiting_time;
+        total_tat += p[i].turnaround_time;
+        total_rt += p[i].response_time;
+        total_burst += p[i].burst_time;
+
+        if (p[i].completion_time > last_completion)
+            last_completion = p[i].completion_time;
+    }
+
+    result->avg_wt = total_wt / n;
+    result->avg_tat = total_tat / n;
+    result->avg_rt = total_rt / n;
+
+    result->cpu_util = last_completion > 0
+        ? total_burst * 100.0 / last_completion
+        : 0.0;
+}
 void display_results(const Process p[], int n, const GanttChart *chart)
 {
     printf("\n========== GANTT CHART ==========\n");
