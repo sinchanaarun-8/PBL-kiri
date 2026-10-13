@@ -20,8 +20,7 @@ static int compare_pid(const void *a, const void *b)
     return (x->pid > y->pid) - (x->pid < y->pid);
 }
 static void calculate_metrics(
-    const Process p[], int n, const GanttChart *chart,
-    ComparisonResult *result
+    const Process p[], int n, ComparisonResult *result
 )
 {
     double total_wt = 0, total_tat = 0, total_rt = 0;
@@ -41,7 +40,6 @@ static void calculate_metrics(
     result->avg_wt = total_wt / n;
     result->avg_tat = total_tat / n;
     result->avg_rt = total_rt / n;
-
     result->cpu_util = last_completion > 0
         ? total_burst * 100.0 / last_completion
         : 0.0;
@@ -153,6 +151,86 @@ static int run_rr(const Process input[], int n, int quantum)
 
     free(chart);
     return status;
+}
+
+
+static int collect_comparison_result(
+    const char *name, Scheduler scheduler, const Process input[],
+    int n, int quantum, int is_rr, ComparisonResult *result
+)
+{
+    Process copy[MAX_PROCESSES];
+    GanttChart *chart = malloc(sizeof(*chart));
+
+    if (!chart) {
+        fprintf(stderr, "Unable to allocate comparison chart.\n");
+        return -1;
+    }
+
+    for (int i = 0; i < n; i++)
+        copy[i] = input[i];
+
+    int status = is_rr
+        ? schedule_round_robin(copy, n, quantum, chart)
+        : scheduler(copy, n, chart);
+
+    if (status == 0) {
+        snprintf(result->name, sizeof(result->name), "%s", name);
+        calculate_metrics(copy, n, result);
+    }
+
+    free(chart);
+    return status;
+}
+
+static void run_comparison(
+    const Process processes[], int n, int quantum
+)
+{
+    const char *names[] = {
+        "FCFS",
+        "SJF Non-Preemptive",
+        "Priority Non-Preemptive",
+        "SJF Preemptive (SRTF)",
+        "Priority Preemptive",
+        "Round Robin"
+    };
+
+    Scheduler schedulers[] = {
+        schedule_fcfs,
+        schedule_sjf_non_preemptive,
+        schedule_priority_non_preemptive,
+        schedule_srtf,
+        schedule_priority_preemptive,
+        NULL
+    };
+
+    ComparisonResult results[6];
+    int success[6] = {0};
+
+    for (int i = 0; i < 6; i++) {
+        success[i] = collect_comparison_result(
+            names[i], schedulers[i], processes, n,
+            quantum, i == 5, &results[i]
+        ) == 0;
+    }
+
+    printf("\n\n========== OVERALL PERFORMANCE COMPARISON ==========\n");
+    printf("%-27s %10s %10s %10s %12s\n",
+           "Algorithm", "Avg WT", "Avg TAT", "Avg RT", "CPU Util");
+
+    for (int i = 0; i < 6; i++) {
+        if (success[i]) {
+            printf("%-27s %10.2f %10.2f %10.2f %11.2f%%\n",
+                   results[i].name,
+                   results[i].avg_wt,
+                   results[i].avg_tat,
+                   results[i].avg_rt,
+                   results[i].cpu_util);
+        } else {
+            fprintf(stderr, "Comparison failed for %s.\n", names[i]);
+        }
+    }
 }
 
 int main(void)
@@ -277,6 +355,7 @@ int main(void)
                     return EXIT_FAILURE;
                 }
                 run_rr(processes, n, quantum);
+                run_comparison(processes, n, quantum);
             }
             break;
         case 8:
