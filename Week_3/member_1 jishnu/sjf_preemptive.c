@@ -1,24 +1,30 @@
 #include <stdio.h>
 
 #define MAX 100
-#define SEG 10000
+#define MAX_SEGMENTS 100000
 
 typedef struct {
-    int at, bt, rem, ct, first;
+    int pid;
+    int arrival;
+    int burst;
+    int remaining;
+    int completion;
+    int waiting;
+    int turnaround;
+    int response;
+    int started;
 } Process;
 
-typedef struct {
-    int pid, start, end;
-} Block;
-
-int main(void)
-{
+int main(void) {
     Process p[MAX];
-    Block g[SEG];
-    int n, i, time = 0, done = 0, count = 0;
-    double total_wt = 0, total_tat = 0, total_rt = 0;
+    int order[MAX_SEGMENTS];
+    int seg_start[MAX_SEGMENTS];
+    int seg_end[MAX_SEGMENTS];
+    int n, time = 0, completed = 0, segments = 0;
+    double total_wt = 0;
+    double total_tat = 0;
+    double total_rt = 0;
 
-    printf("SJF PREEMPTIVE (SRTF)\n");
     printf("Enter number of processes: ");
 
     if (scanf("%d", &n) != 1 || n < 1 || n > MAX) {
@@ -26,111 +32,102 @@ int main(void)
         return 1;
     }
 
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
+        p[i].pid = i + 1;
+        p[i].started = 0;
+
         printf("Enter Arrival Time and Burst Time for P%d: ", i + 1);
 
-        if (scanf("%d%d", &p[i].at, &p[i].bt) != 2 ||
-            p[i].at < 0 || p[i].bt <= 0) {
-            printf("Invalid input.\n");
+        if (scanf("%d %d", &p[i].arrival, &p[i].burst) != 2 ||
+            p[i].arrival < 0 || p[i].burst <= 0) {
+            printf("Invalid process details.\n");
             return 1;
         }
 
-        p[i].rem = p[i].bt;
-        p[i].ct = 0;
-        p[i].first = -1;
+        p[i].remaining = p[i].burst;
     }
 
-    while (done < n) {
-        int best = -1;
+    while (completed < n) {
+        int idx = -1;
 
-        for (i = 0; i < n; i++) {
-            if (p[i].at <= time && p[i].rem > 0) {
-                if (best == -1 ||
-                    p[i].rem < p[best].rem ||
-                    (p[i].rem == p[best].rem && i < best)) {
-                    best = i;
+        for (int i = 0; i < n; i++) {
+            if (p[i].arrival <= time && p[i].remaining > 0) {
+                if (idx == -1 ||
+                    p[i].remaining < p[idx].remaining) {
+                    idx = i;
                 }
             }
         }
 
-        if (best == -1) {
-            if (count > 0 && g[count - 1].pid == -1) {
-                g[count - 1].end = ++time;
-            } else {
-                if (count >= SEG) {
-                    printf("Too many Gantt chart segments.\n");
-                    return 1;
-                }
-
-                g[count].pid = -1;
-                g[count].start = time;
-                g[count].end = ++time;
-                count++;
-            }
-            continue;
-        }
-
-        if (p[best].first == -1)
-            p[best].first = time;
-
-        if (count > 0 && g[count - 1].pid == best + 1) {
-            g[count - 1].end = time + 1;
-        } else {
-            if (count >= SEG) {
+        if (segments == 0 || order[segments - 1] != idx) {
+            if (segments >= MAX_SEGMENTS) {
                 printf("Too many Gantt chart segments.\n");
                 return 1;
             }
 
-            g[count].pid = best + 1;
-            g[count].start = time;
-            g[count].end = time + 1;
-            count++;
+            order[segments] = idx;
+            seg_start[segments] = time;
+            seg_end[segments] = time + 1;
+            segments++;
+        } else {
+            seg_end[segments - 1] = time + 1;
         }
 
-        p[best].rem--;
+        if (idx != -1) {
+            if (!p[idx].started) {
+                p[idx].response = time - p[idx].arrival;
+                p[idx].started = 1;
+            }
+
+            p[idx].remaining--;
+
+            if (p[idx].remaining == 0) {
+                p[idx].completion = time + 1;
+                p[idx].turnaround =
+                    p[idx].completion - p[idx].arrival;
+                p[idx].waiting =
+                    p[idx].turnaround - p[idx].burst;
+
+                total_wt += p[idx].waiting;
+                total_tat += p[idx].turnaround;
+                total_rt += p[idx].response;
+                completed++;
+            }
+        }
+
         time++;
+    }
 
-        if (p[best].rem == 0) {
-            p[best].ct = time;
-            done++;
-        }
+    printf("\nSJF Preemptive (SRTF) Results\n");
+    printf("PID\tAT\tBT\tCT\tWT\tTAT\tRT\n");
+
+    for (int i = 0; i < n; i++) {
+        printf("P%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+               p[i].pid,
+               p[i].arrival,
+               p[i].burst,
+               p[i].completion,
+               p[i].waiting,
+               p[i].turnaround,
+               p[i].response);
     }
 
     printf("\nGantt Chart:\n");
+    printf("%d", seg_start[0]);
 
-    for (i = 0; i < count; i++) {
-        if (g[i].pid == -1)
-            printf("| IDLE ");
-        else
-            printf("| P%d ", g[i].pid);
+    for (int i = 0; i < segments; i++) {
+        if (order[i] == -1) {
+            printf(" | Idle | %d", seg_end[i]);
+        } else {
+            printf(" | P%d | %d",
+                   p[order[i]].pid, seg_end[i]);
+        }
     }
 
-    printf("|\n");
-
-    for (i = 0; i < count; i++)
-        printf("%-7d", g[i].start);
-
-    printf("%d\n", g[count - 1].end);
-
-    printf("\nPID\tAT\tBT\tCT\tTAT\tWT\tRT\n");
-
-    for (i = 0; i < n; i++) {
-        int tat = p[i].ct - p[i].at;
-        int wt = tat - p[i].bt;
-        int rt = p[i].first - p[i].at;
-
-        printf("P%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-               i + 1, p[i].at, p[i].bt,
-               p[i].ct, tat, wt, rt);
-
-        total_wt += wt;
-        total_tat += tat;
-        total_rt += rt;
-    }
-
-    printf("\nAverage WT: %.2f\n", total_wt / n);
-    printf("Average TAT: %.2f\n", total_tat / n);
-    printf("Average RT: %.2f\n", total_rt / n);
+    printf("\n\nAverage Waiting Time: %.2f\n", total_wt / n);
+    printf("Average Turnaround Time: %.2f\n", total_tat / n);
+    printf("Average Response Time: %.2f\n", total_rt / n);
 
     return 0;
 }
+

@@ -20,7 +20,8 @@ int main(void) {
     }
 
     for (int i = 0; i < n; i++) {
-        printf("Enter PID, Arrival Time and Burst Time for process %d: ", i + 1);
+        printf("Enter PID, Arrival Time and Burst Time for process %d: ",
+               i + 1);
         if (scanf("%d %d %d", &p[i].pid, &p[i].arrival,
                   &p[i].burst) != 3 ||
             p[i].arrival < 0 || p[i].burst <= 0) {
@@ -30,50 +31,73 @@ int main(void) {
         p[i].done = 0;
     }
 
-    printf("\nSJF Non-Preemptive Scheduling Results\n");
-    printf("PID\tAT\tBT\tST\tCT\tWT\tTAT\tRT\n");
+    /* Store execution order for the Gantt chart */
+    int order[MAX], count = 0, start_time[MAX], end_time[MAX];
 
     while (completed < n) {
-        int shortest = -1;
+        int idx = -1;
 
         for (int i = 0; i < n; i++) {
             if (!p[i].done && p[i].arrival <= time) {
-                if (shortest == -1 ||
-                    p[i].burst < p[shortest].burst ||
-                    (p[i].burst == p[shortest].burst &&
-                     p[i].arrival < p[shortest].arrival)) {
-                    shortest = i;
+                if (idx == -1 || p[i].burst < p[idx].burst ||
+                    (p[i].burst == p[idx].burst &&
+                     p[i].arrival < p[idx].arrival)) {
+                    idx = i;
                 }
             }
         }
 
-        if (shortest == -1) {
+        if (idx == -1) {
             time++;
             continue;
         }
 
-        p[shortest].start = time;
-        p[shortest].completion = time + p[shortest].burst;
-        p[shortest].turnaround =
-            p[shortest].completion - p[shortest].arrival;
-        p[shortest].waiting =
-            p[shortest].turnaround - p[shortest].burst;
-        p[shortest].response =
-            p[shortest].start - p[shortest].arrival;
+        p[idx].start = time;
+        p[idx].completion = time + p[idx].burst;
+        p[idx].turnaround = p[idx].completion - p[idx].arrival;
+        p[idx].waiting = p[idx].turnaround - p[idx].burst;
+        p[idx].response = p[idx].start - p[idx].arrival;
 
-        time = p[shortest].completion;
-        p[shortest].done = 1;
+        order[count] = idx;
+        start_time[count] = time;
+        end_time[count] = p[idx].completion;
+        count++;
+
+        total_wt += p[idx].waiting;
+        total_tat += p[idx].turnaround;
+
+        time = p[idx].completion;
+        p[idx].done = 1;
         completed++;
-
-        total_wt += p[shortest].waiting;
-        total_tat += p[shortest].turnaround;
-
-        printf("P%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-               p[shortest].pid, p[shortest].arrival,
-               p[shortest].burst, p[shortest].start,
-               p[shortest].completion, p[shortest].waiting,
-               p[shortest].turnaround, p[shortest].response);
     }
+
+    printf("\nSJF Non-Preemptive Results\n");
+    printf("PID\tAT\tBT\tST\tCT\tWT\tTAT\tRT\n");
+
+    for (int i = 0; i < n; i++) {
+        printf("P%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+               p[i].pid, p[i].arrival, p[i].burst,
+               p[i].start, p[i].completion, p[i].waiting,
+               p[i].turnaround, p[i].response);
+    }
+
+    printf("\nGantt Chart:\n");
+    for (int i = 0; i < count; i++)
+        printf("+-------");
+    printf("+\n");
+
+    for (int i = 0; i < count; i++)
+        printf("|  P%-3d ", p[order[i]].pid);
+    printf("|\n");
+
+    for (int i = 0; i < count; i++)
+        printf("+-------");
+    printf("+\n");
+
+    printf("%-8d", start_time[0]);
+    for (int i = 0; i < count; i++)
+        printf("%-8d", end_time[i]);
+    printf("\n");
 
     printf("\nAverage Waiting Time: %.2f\n", total_wt / n);
     printf("Average Turnaround Time: %.2f\n", total_tat / n);
