@@ -1,0 +1,323 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deadlock Simulation System</title>
+<style>
+:root{--bg:#f3f6fb;--card:#fff;--ink:#17233d;--muted:#64748b;--line:#dce4f0;--blue:#3157d5;--green:#16845b;--red:#c43d4b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Arial,sans-serif}
+header{background:#17233d;color:white;padding:26px max(22px,calc((100% - 1180px)/2))}
+header h1{margin:0;font-size:27px}
+header p{margin:7px 0 0;color:#d0daee}
+main{max-width:1180px;margin:24px auto;padding:0 18px 40px}
+.layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:19px;box-shadow:0 3px 12px #17233d08;min-width:0}
+.wide{grid-column:1/-1}
+h2{font-size:18px;margin:0 0 13px}
+h3{font-size:15px;margin:16px 0 8px}
+p.help,.muted{color:var(--muted);font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+label{font-size:13px;font-weight:600;color:#45536d}
+input,select{border:1px solid #cbd5e1;border-radius:7px;padding:9px;background:white;color:var(--ink);width:100%;min-width:0}
+button{border:0;border-radius:7px;background:var(--blue);color:white;padding:10px 14px;font-weight:600;cursor:pointer}
+button.secondary{background:#e8edf8;color:#25365c}
+button.danger{background:var(--red)}
+button:hover{filter:brightness(.96)}
+.matrix-wrap{overflow-x:auto;margin:8px 0 13px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid var(--line);padding:8px;text-align:center;white-space:nowrap}
+th{background:#f0f4fb;color:#34435e}
+.matrix-input{width:60px;text-align:center;padding:7px}
+.pill{display:inline-block;border-radius:20px;padding:5px 10px;font-size:12px;font-weight:700}
+.good{background:#e0f6eb;color:#116b49}
+.bad{background:#fde8e9;color:#a12736}
+.neutral{background:#e8eefb;color:#2948a0}
+#message{margin:16px 0;padding:12px 14px;border-radius:8px;background:#e8eefb;color:#2948a0;display:none}
+#message.error{background:#fde8e9;color:#a12736}
+#message.success{background:#e0f6eb;color:#116b49}
+.stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#f3f6fb;padding:12px;border-radius:8px}
+.stat small{display:block;color:var(--muted)}
+.stat strong{font-size:21px}
+.edge-list{display:flex;flex-wrap:wrap;gap:8px}
+.edge{padding:7px 10px;border-radius:7px;background:#f0f4fb;font-size:13px}
+.edge.alloc{border-left:4px solid var(--blue)}
+.edge.req{border-left:4px solid #d97706}
+#safeSequence{font-weight:700;overflow-wrap:anywhere}
+footer{text-align:center;padding:20px;color:var(--muted);font-size:12px}
+@media(max-width:720px){.layout{grid-template-columns:1fr}.wide{grid-column:auto}.stat-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Deadlock Simulation System</h1>
+  <p>Banker's Algorithm · Deadlock Detection · Resource Allocation Graph · Recovery</p>
+</header>
+<main>
+<div id="message"></div>
+<div class="layout">
+<section class="card wide">
+  <h2>1. Configure the simulation</h2>
+  <p class="help">Use 1–10 processes and 1–10 resource types. The example button loads a standard Banker's Algorithm example.</p>
+  <div class="row">
+    <div class="field"><label for="pc">Number of processes</label><input id="pc" type="number" min="1" max="10" value="5"></div>
+    <div class="field"><label for="rc">Resource types</label><input id="rc" type="number" min="1" max="10" value="3"></div>
+    <button class="secondary" id="generate">Generate matrices</button>
+    <button class="secondary" id="example">Load example</button>
+  </div>
+  <div id="inputMatrices"></div>
+  <button id="initialize">Initialize simulation</button>
+</section>
+
+<section class="card">
+  <h2>2. System state</h2>
+  <div id="summary" class="muted">Initialize a simulation to see its state.</div>
+  <div id="stateTables"></div>
+</section>
+
+<section class="card">
+  <h2>3. Banker's safety check</h2>
+  <p class="help">Checks whether all processes can finish in a safe order.</p>
+  <button id="checkSafety">Check safety</button>
+  <div id="safetyResult" style="margin-top:12px">No safety check performed yet.</div>
+</section>
+
+<section class="card">
+  <h2>4. Resource request</h2>
+  <p class="help">Grant a request only if Banker's Algorithm accepts it as safe.</p>
+  <div class="field"><label for="grantProcess">Process</label><select id="grantProcess"></select></div>
+  <div id="grantInputs" class="row"></div>
+  <button id="grant">Request and check</button>
+  <h3>Record a waiting request</h3>
+  <p class="help">Records a pending request for deadlock detection; it does not grant resources.</p>
+  <div class="field"><label for="waitProcess">Process</label><select id="waitProcess"></select></div>
+  <div id="waitInputs" class="row"></div>
+  <button class="secondary" id="wait">Record waiting request</button>
+</section>
+
+<section class="card">
+  <h2>5. Deadlock detection and recovery</h2>
+  <p class="help">Run the detection algorithm, then select a process to recover if it holds resources.</p>
+  <button id="detect">Detect deadlock</button>
+  <div id="deadlockResult" style="margin:12px 0">Detection not run yet.</div>
+  <div class="field"><label for="recoverProcess">Process to recover</label><select id="recoverProcess"></select></div>
+  <button class="danger" id="recover">Recover selected process</button>
+</section>
+
+<section class="card wide">
+  <h2>6. Resource Allocation Graph (RAG)</h2>
+  <p class="help">Blue edges mean allocated resources (resource → process). Orange edges mean pending requests (process → resource). A cycle alone does not always prove deadlock when resource types have multiple instances.</p>
+  <div id="graphSummary" class="muted">Initialize the simulation to display graph edges.</div>
+  <div id="graph" class="edge-list"></div>
+</section>
+</div>
+<footer>Week 4 · Interactive Operating Systems Project · C backend with Python and HTML interface</footer>
+</main>
+<script>
+const API = "http://127.0.0.1:8001";
+let initialized = false, processCount = 5, resourceCount = 3, latestState = null;
+const $ = id => document.getElementById(id);
+
+function notify(text, kind="success") {
+  const box = $("message");
+  box.textContent = text;
+  box.className = kind;
+  box.style.display = "block";
+}
+async function api(data) {
+  const response = await fetch(API, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(data)
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Request failed");
+  return result;
+}
+function numberInput(value=0, label="") {
+  return `<div class="field"><label>${label}</label><input class="matrix-input" type="number" min="0" step="1" value="${value}"></div>`;
+}
+function makeMatrix(title, id, rows, cols, values=[]) {
+  let html = `<h3>${title}</h3><div class="matrix-wrap"><table><thead><tr><th>Process</th>`;
+  for(let r=0;r<cols;r++) html += `<th>R${r}</th>`;
+  html += `</tr></thead><tbody>`;
+  for(let p=0;p<rows;p++) {
+    html += `<tr><th>P${p}</th>`;
+    for(let r=0;r<cols;r++) {
+      const value = values[p] && values[p][r] !== undefined ? values[p][r] : 0;
+      html += `<td><input class="matrix-input" type="number" min="0" step="1" value="${value}" data-matrix="${id}" data-p="${p}" data-r="${r}"></td>`;
+    }
+    html += `</tr>`;
+  }
+  return html + `</tbody></table></div>`;
+}
+function makeVector(title, id, cols, values=[]) {
+  let html = `<h3>${title}</h3><div class="row">`;
+  for(let r=0;r<cols;r++) {
+    html += `<div class="field"><label>R${r}</label><input class="matrix-input" type="number" min="0" step="1" data-vector="${id}" data-r="${r}" value="${values[r] ?? 0}"></div>`;
+  }
+  return html + `</div>`;
+}
+function generateInputs(example=false) {
+  processCount = Number($("pc").value);
+  resourceCount = Number($("rc").value);
+  if(!Number.isInteger(processCount)||processCount<1||processCount>10||
+     !Number.isInteger(resourceCount)||resourceCount<1||resourceCount>10) {
+    notify("Enter between 1 and 10 for both counts.", "error");
+    return;
+  }
+  const alloc = example ? [[0,1,0],[2,0,0],[3,0,2],[2,1,1],[0,0,2]] : [];
+  const max = example ? [[7,5,3],[3,2,2],[9,0,2],[2,2,2],[4,3,3]] : [];
+  const a = Array.from({length:processCount},(_,p)=>Array.from({length:resourceCount},(_,r)=>alloc[p]?.[r] ?? 0));
+  const m = Array.from({length:processCount},(_,p)=>Array.from({length:resourceCount},(_,r)=>max[p]?.[r] ?? 0));
+  const avail = example ? [3,3,2].slice(0,resourceCount) : Array(resourceCount).fill(0);
+  while(avail.length<resourceCount) avail.push(0);
+  $("inputMatrices").innerHTML =
+    makeMatrix("Allocation matrix","allocation",processCount,resourceCount,a) +
+    makeMatrix("Maximum matrix","maximum",processCount,resourceCount,m) +
+    makeVector("Available vector","available",resourceCount,avail);
+}
+function readInputs() {
+  const matrices = {};
+  for(const name of ["allocation","maximum"]) {
+    matrices[name] = Array.from({length:processCount},()=>Array(resourceCount).fill(0));
+    document.querySelectorAll(`[data-matrix="${name}"]`).forEach(el=>{
+      const n = Number(el.value);
+      if(!Number.isInteger(n)||n<0) throw new Error("Matrix values must be non-negative integers.");
+      matrices[name][Number(el.dataset.p)][Number(el.dataset.r)] = n;
+    });
+  }
+  matrices.available = Array(resourceCount).fill(0);
+  document.querySelectorAll('[data-vector="available"]').forEach(el=>{
+    const n=Number(el.value);
+    if(!Number.isInteger(n)||n<0) throw new Error("Available values must be non-negative integers.");
+    matrices.available[Number(el.dataset.r)] = n;
+  });
+  for(let p=0;p<processCount;p++) for(let r=0;r<resourceCount;r++) {
+    if(matrices.allocation[p][r] > matrices.maximum[p][r])
+      throw new Error(`Allocation cannot exceed maximum for P${p}, R${r}.`);
+  }
+  return matrices;
+}
+function fillProcessSelects() {
+  for(const id of ["grantProcess","waitProcess","recoverProcess"]) {
+    $(id).innerHTML = Array.from({length:processCount},(_,p)=>`<option value="${p}">P${p}</option>`).join("");
+  }
+  for(const id of ["grantInputs","waitInputs"]) {
+    $(id).innerHTML = Array.from({length:resourceCount},(_,r)=>numberInput(0,`R${r} request`)).join("");
+  }
+}
+function getRequest(id) {
+  const values = [...$(id).querySelectorAll("input")].map(el=>Number(el.value));
+  if(values.some(n=>!Number.isInteger(n)||n<0)) throw new Error("Requests must be non-negative integers.");
+  return values;
+}
+function table(title, matrix, rowCount, colCount) {
+  let html = `<h3>${title}</h3><div class="matrix-wrap"><table><thead><tr><th>Process</th>`;
+  for(let r=0;r<colCount;r++) html += `<th>R${r}</th>`;
+  html += `</tr></thead><tbody>`;
+  for(let p=0;p<rowCount;p++) {
+    html += `<tr><th>P${p}</th>`;
+    for(let r=0;r<colCount;r++) html += `<td>${matrix[p][r]}</td>`;
+    html += `</tr>`;
+  }
+  return html + `</tbody></table></div>`;
+}
+function renderState(s) {
+  latestState = s;
+  $("summary").innerHTML = `<div class="stat-grid">
+    <div class="stat"><small>Processes</small><strong>${processCount}</strong></div>
+    <div class="stat"><small>Resource types</small><strong>${resourceCount}</strong></div>
+    <div class="stat"><small>State</small><strong style="font-size:16px">Initialized</strong></div></div>
+    <h3>Available vector</h3><p>${s.available.map((v,r)=>`R${r}: <b>${v}</b>`).join(" &nbsp; | &nbsp; ")}</p>`;
+  $("stateTables").innerHTML =
+    table("Allocation",s.allocation,processCount,resourceCount) +
+    table("Maximum",s.maximum,processCount,resourceCount) +
+    table("Need",s.need,processCount,resourceCount) +
+    table("Pending requests",s.requests,processCount,resourceCount);
+  renderGraph(s);
+}
+function renderSafety(s) {
+  $("safetyResult").innerHTML = s.safe
+    ? `<span class="pill good">SAFE STATE</span><p>Safe sequence:</p><div id="safeSequence">${s.sequence.map(p=>"P"+p).join(" → ") || "—"}</div>`
+    : `<span class="pill bad">UNSAFE STATE</span><p>No safe sequence is available for the current state.</p>`;
+}
+function renderGraph(s) {
+  const edges = [];
+  for(let p=0;p<processCount;p++) for(let r=0;r<resourceCount;r++) {
+    if(s.allocation[p][r]>0) edges.push(`<span class="edge alloc">R${r} → P${p} (${s.allocation[p][r]})</span>`);
+    if(s.requests[p][r]>0) edges.push(`<span class="edge req">P${p} → R${r} (${s.requests[p][r]})</span>`);
+  }
+  $("graphSummary").textContent = edges.length
+    ? `${edges.length} allocation/request edge(s). Resource totals include allocated and available instances.`
+    : "No allocation or pending-request edges to display.";
+  $("graph").innerHTML = edges.join("") || `<span class="muted">No edges yet.</span>`;
+}
+function ensureInit() { if(!initialized) throw new Error("Initialize the simulator first."); }
+$("generate").addEventListener("click",()=>generateInputs(false));
+$("example").addEventListener("click",()=>{
+  $("pc").value=5; $("rc").value=3; generateInputs(true);
+  notify("Example loaded. Click Initialize simulation to start.", "success");
+});
+$("initialize").addEventListener("click",async()=>{
+  try {
+    const inputs=readInputs();
+    const result=await api({action:"init",processes:processCount,resources:resourceCount,...inputs});
+    initialized=true; fillProcessSelects(); renderState(result.state); renderSafety(result.safety);
+    $("deadlockResult").textContent="Run detection to check the current state.";
+    notify(result.message);
+  } catch(e) { notify(e.message,"error"); }
+});
+$("checkSafety").addEventListener("click",async()=>{
+  try { ensureInit(); const result=await api({action:"detect"}); renderState(result.state);
+    const res=await fetch(API+"/api/health");
+    if(!res.ok) throw new Error("Backend is unavailable.");
+    // Safety is returned by the state-changing API; use a harmless zero request only when needed.
+    const response=await api({action:"wait",process:0,request:Array(resourceCount).fill(0)});
+    renderSafety(response.safety); notify("Safety check refreshed.");
+  } catch(e) { notify(e.message,"error"); }
+});
+$("grant").addEventListener("click",async()=>{
+  try {
+    ensureInit();
+    const result=await api({action:"grant",process:Number($("grantProcess").value),request:getRequest("grantInputs")});
+    renderState(result.state); renderSafety(result.safety);
+    notify(result.message,result.status===0?"success":"error");
+  } catch(e) { notify(e.message,"error"); }
+});
+$("wait").addEventListener("click",async()=>{
+  try {
+    ensureInit();
+    const result=await api({action:"wait",process:Number($("waitProcess").value),request:getRequest("waitInputs")});
+    renderState(result.state); renderSafety(result.safety);
+    notify(result.message,result.status===0?"success":"error");
+  } catch(e) { notify(e.message,"error"); }
+});
+$("detect").addEventListener("click",async()=>{
+  try {
+    ensureInit();
+    const result=await api({action:"detect"});
+    renderState(result.state);
+    $("deadlockResult").innerHTML = result.count
+      ? `<span class="pill bad">${result.count} DEADLOCKED PROCESS(ES)</span><p>${result.deadlocked.map(p=>"P"+p).join(", ")}</p>`
+      : `<span class="pill good">NO DEADLOCK DETECTED</span><p>RAG cycle reported: ${result.cycle?"yes":"no"}. A cycle alone does not prove deadlock for multiple resource instances.</p>`;
+    notify("Deadlock detection completed.");
+  } catch(e) { notify(e.message,"error"); }
+});
+$("recover").addEventListener("click",async()=>{
+  try {
+    ensureInit();
+    if(!confirm("Recover the selected process and release its allocated resources?")) return;
+    const result=await api({action:"recover",process:Number($("recoverProcess").value)});
+    renderState(result.state); renderSafety(result.safety);
+    notify(result.message);
+    $("deadlockResult").textContent="Run detection again after recovery.";
+  } catch(e) { notify(e.message,"error"); }
+});
+generateInputs(true);
+</script>
+</body>
+</html>
