@@ -92,7 +92,12 @@ BankersStatus sim_request_resources(
     const int request[SIM_MAX_RESOURCES],
     BankerSafetyResult *result)
 {
-    if (sim == NULL || request == NULL) {
+    if (sim == NULL || request == NULL ||
+        process_index >= sim->banker.process_count) {
+        return BANKERS_ERR_ARGUMENT;
+    }
+
+    if (sim->terminated[process_index]) {
         return BANKERS_ERR_ARGUMENT;
     }
 
@@ -222,9 +227,12 @@ int sim_recover_process(Simulator *sim, size_t process_index)
         sim->banker.available[r] = available20[r];
     }
 
-    /* Cancel this process's outstanding requests. */
+    /* Terminate the recovered process and cancel its requests. */
+    sim->terminated[process_index] = true;
+
     for (size_t r = 0; r < resources; r++) {
         sim->request[process_index][r] = 0;
+        sim->banker.maximum[process_index][r] = 0;
     }
 
     if (bankers_calculate_need(&sim->banker) != BANKERS_OK ||

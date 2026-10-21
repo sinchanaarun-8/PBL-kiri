@@ -13,6 +13,7 @@
 typedef struct {
     BankerState banker;
     int request[SIM_MAX_PROCESSES][SIM_MAX_RESOURCES];
+    bool terminated[SIM_MAX_PROCESSES];
     size_t resource_instances[SIM_MAX_RESOURCES];
     RagGraph graph;
 } Simulator;
