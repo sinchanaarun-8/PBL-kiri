@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2
 LDFLAGS = -lrt
 
-BUILD_DIR = build
+BUILD_DIR = Week_2/build
 
 CORE_SRCS = \
 	Week_2/src/Core/core_process.c \
