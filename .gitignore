@@ -1,0 +1,6 @@
+
+# Week 5 temporary build files
+Week_5/build/
+Week_5/src/*.o
+Week_5/tests/test_integration
+Week_5/gui.c.backup
