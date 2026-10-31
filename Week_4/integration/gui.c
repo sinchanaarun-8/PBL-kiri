@@ -13,6 +13,7 @@
 typedef int (*InitFn)(int, int, const int *, const int *, const int *);
 typedef int (*SafetyFn)(int *, int *, int *);
 typedef int (*RequestFn)(int, const int *, int *, int *, int *);
+typedef int (*WaitingRequestFn)(int, const int *);
 typedef int (*DetectFn)(int *);
 typedef int (*RecoverFn)(int);
 typedef int (*StateFn)(int *, int *, int *, int *, int *);
@@ -23,6 +24,7 @@ static void *lib;
 static InitFn bridge_init;
 static SafetyFn bridge_check_safety;
 static RequestFn bridge_request;
+static WaitingRequestFn bridge_set_waiting_request;
 static DetectFn bridge_detect_deadlock;
 static RecoverFn bridge_recover;
 static StateFn bridge_get_state;
@@ -32,6 +34,9 @@ static CycleFn bridge_graph_has_cycle;
 static GtkWidget *window, *output, *graph_area;
 static GtkWidget *process_combo, *recover_combo;
 static GtkSpinButton *req_spin[MAXR];
+static GtkSpinButton *allocation_spin[MAXP][MAXR];
+static GtkSpinButton *maximum_spin[MAXP][MAXR];
+static GtkSpinButton *available_spin[MAXR];
 static int process_count = 5, resource_count = 3;
 static int edge_count, edge_types[MAXE], edge_process[MAXE];
 static int edge_resource[MAXE], edge_instances[MAXE];
@@ -241,6 +246,115 @@ static void request_clicked(GtkButton *button, gpointer data)
     refresh_graph();
 }
 
+static void apply_matrix_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+
+    int a[MAXP * MAXR] = {0};
+    int m[MAXP * MAXR] = {0};
+    int av[MAXR] = {0};
+
+    for (int r = 0; r < resource_count; r++) {
+        av[r] = gtk_spin_button_get_value_as_int(available_spin[r]);
+        if (av[r] < 0) {
+            show_message("Available values cannot be negative.");
+            return;
+        }
+    }
+
+    for (int p = 0; p < process_count; p++) {
+        for (int r = 0; r < resource_count; r++) {
+            int index = p * MAXR + r;
+            a[index] = gtk_spin_button_get_value_as_int(allocation_spin[p][r]);
+            m[index] = gtk_spin_button_get_value_as_int(maximum_spin[p][r]);
+
+            if (a[index] < 0 || m[index] < 0) {
+                show_message("Matrix values cannot be negative.");
+                return;
+            }
+
+            if (a[index] > m[index]) {
+                char message[160];
+                snprintf(message, sizeof(message),
+                         "Invalid values: Allocation exceeds Maximum for P%d, R%d.",
+                         p, r);
+                show_message(message);
+                return;
+            }
+        }
+    }
+
+    int status = bridge_init(process_count, resource_count, a, m, av);
+    if (status != 0) {
+        char message[160];
+        snprintf(message, sizeof(message),
+                 "Backend rejected the configuration. Status: %d", status);
+        show_message(message);
+        return;
+    }
+
+    memcpy(allocation, a, sizeof(allocation));
+    memcpy(maximum, m, sizeof(maximum));
+    memcpy(available, av, sizeof(available));
+
+    char message[256];
+    snprintf(message, sizeof(message),
+             "Configuration applied successfully.\n"
+             "Processes: %d | Resource types: %d\n"
+             "Run Check System Safety to calculate the safe sequence.",
+             process_count, resource_count);
+    show_message(message);
+    g_strlcpy(last_message, message, sizeof(last_message));
+    refresh_graph();
+}
+
+static void waiting_request_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+
+    int p = gtk_combo_box_get_active(GTK_COMBO_BOX(process_combo));
+    if (p < 0 || p >= process_count)
+        return;
+
+    int req[MAXR] = {0};
+    for (int r = 0; r < resource_count; r++)
+        req[r] = gtk_spin_button_get_value_as_int(req_spin[r]);
+
+    int status = bridge_set_waiting_request(p, req);
+
+    char buf[8192];
+    snprintf(buf, sizeof(buf),
+             "WAITING RESOURCE REQUEST\n"
+             "========================\n"
+             "Process: P%d\n"
+             "Request: [", p);
+
+    for (int r = 0; r < resource_count; r++) {
+        snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
+                 "%s%d", r ? ", " : "", req[r]);
+    }
+
+    snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
+             "]\nBackend status: %d\n", status);
+
+    if (status == 0) {
+        snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
+                 "Waiting request recorded successfully. "
+                 "Resources have not been granted.\n");
+    } else {
+        snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
+                 "Waiting request could not be recorded. "
+                 "Check the request values and process state.\n");
+    }
+
+    append_state(buf, sizeof(buf));
+    show_message(buf);
+    g_strlcpy(last_message, buf, sizeof(last_message));
+    refresh_graph();
+}
+
 static void recover_clicked(GtkButton *button, gpointer data)
 {
     (void)button;
@@ -389,6 +503,128 @@ static void load_symbol(void **target, const char *name)
 
 #define LOAD(fn) load_symbol((void **)&fn, #fn)
 
+
+static void show_need_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+
+    int a[MAXP * MAXR] = {0}, m[MAXP * MAXR] = {0};
+    int need[MAXP * MAXR] = {0}, av[MAXR] = {0};
+    int requests[MAXP * MAXR] = {0};
+
+    if (!bridge_get_state(a, m, need, av, requests)) {
+        show_message("Unable to retrieve the Need matrix.");
+        return;
+    }
+
+    char buf[8192] = "NEED MATRIX (Maximum - Allocation)\n"
+                    "==================================\n";
+
+    for (int p = 0; p < process_count; p++) {
+        size_t used = strlen(buf);
+        snprintf(buf + used, sizeof(buf) - used, "P%d: [", p);
+
+        for (int r = 0; r < resource_count; r++) {
+            used = strlen(buf);
+            snprintf(buf + used, sizeof(buf) - used, "%s%d",
+                     r ? ", " : "", need[p * MAXR + r]);
+        }
+
+        used = strlen(buf);
+        snprintf(buf + used, sizeof(buf) - used, "]\n");
+    }
+
+    append_state(buf, sizeof(buf));
+    show_message(buf);
+    g_strlcpy(last_message, buf, sizeof(last_message));
+}
+
+static void refresh_graph_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    refresh_graph();
+}
+
+static void system_status_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+
+    int safe = 0, sequence[MAXP] = {0}, length = 0;
+    int status = bridge_check_safety(&safe, sequence, &length);
+
+    char buf[8192];
+    snprintf(buf, sizeof(buf),
+             "SYSTEM STATUS\n"
+             "=============\n"
+             "Processes: %d\n"
+             "Resource types: %d\n"
+             "Banker's safety status: %s\n",
+             process_count, resource_count,
+             status == 0 ? (safe ? "SAFE" : "UNSAFE") : "CHECK FAILED");
+
+    append_state(buf, sizeof(buf));
+    show_message(buf);
+    g_strlcpy(last_message, buf, sizeof(last_message));
+    refresh_graph();
+}
+
+static void clear_output_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    show_message("");
+    last_message[0] = '\0';
+}
+
+static void exit_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    gtk_main_quit();
+}
+
+
+static void create_processes_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    char message[128];
+    snprintf(message, sizeof(message),
+             "PROCESS CONFIGURATION\nProcesses available: %d\nProcess IDs: P0 to P%d",
+             process_count, process_count - 1);
+    show_message(message);
+}
+
+static void create_resources_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    char message[128];
+    snprintf(message, sizeof(message),
+             "RESOURCE CONFIGURATION\nResource types: %d\nResource IDs: R0 to R%d",
+             resource_count, resource_count - 1);
+    show_message(message);
+}
+
+static void set_allocation_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    gtk_widget_grab_focus(GTK_WIDGET(allocation_spin[0][0]));
+    show_message("Edit Allocation values, then click Apply Configuration.");
+}
+
+static void set_maximum_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    (void)data;
+    gtk_widget_grab_focus(GTK_WIDGET(maximum_spin[0][0]));
+    show_message("Edit Maximum values, then click Apply Configuration.");
+}
+
 int main(int argc, char **argv)
 {
     gtk_init(&argc, &argv);
@@ -402,6 +638,7 @@ int main(int argc, char **argv)
     LOAD(bridge_init);
     LOAD(bridge_check_safety);
     LOAD(bridge_request);
+    LOAD(bridge_set_waiting_request);
     LOAD(bridge_detect_deadlock);
     LOAD(bridge_recover);
     LOAD(bridge_get_state);
@@ -409,14 +646,13 @@ int main(int argc, char **argv)
     LOAD(bridge_graph_has_cycle);
 
     if (!bridge_init || !bridge_check_safety || !bridge_request ||
-        !bridge_detect_deadlock || !bridge_recover ||
-        !bridge_get_state || !bridge_get_graph ||
+        !bridge_set_waiting_request || !bridge_detect_deadlock ||
+        !bridge_recover || !bridge_get_state || !bridge_get_graph ||
         !bridge_graph_has_cycle) {
         fprintf(stderr, "A required bridge function is missing.\n");
         return 1;
     }
 
-    /* Standard five-process, three-resource Banker example. */
     int a[MAXP * MAXR] = {0};
     int m[MAXP * MAXR] = {0};
     int av[MAXR] = {3, 3, 2};
@@ -425,6 +661,7 @@ int main(int argc, char **argv)
         {0, 1, 0}, {2, 0, 0}, {3, 0, 2},
         {2, 1, 1}, {0, 0, 2}
     };
+
     int mm[5][3] = {
         {7, 5, 3}, {3, 2, 2}, {9, 0, 2},
         {2, 2, 2}, {4, 3, 3}
@@ -439,94 +676,162 @@ int main(int argc, char **argv)
 
     memcpy(allocation, a, sizeof(a));
     memcpy(maximum, m, sizeof(m));
+    memcpy(available, av, sizeof(available));
 
-    int init_status = bridge_init(process_count, resource_count,
-                                  a, m, av);
-    if (init_status != 0) {
-        fprintf(stderr, "Backend initialization failed: %d\n", init_status);
+    if (bridge_init(process_count, resource_count, a, m, av) != 0) {
+        fprintf(stderr, "Backend initialization failed.\n");
         return 1;
     }
 
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window),
                          "Interactive Deadlock Simulation System");
-    gtk_window_set_default_size(GTK_WINDOW(window), 1150, 760);
+    gtk_window_set_default_size(GTK_WINDOW(window), 1250, 820);
+    gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
-    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-    gtk_container_set_border_width(GTK_CONTAINER(root), 14);
+    GtkCssProvider *css = gtk_css_provider_new();
+    const char *style =
+        "window { background: #f1f5f9; }"
+        "frame { border: 1px solid #cbd5e1; border-radius: 8px; }"
+        "frame > label { color: #17365d; font-weight: bold; }"
+        "button { padding: 9px; border-radius: 6px;"
+        " background: #e2eaf5; color: #17365d; font-weight: bold; }"
+        "button:hover { background: #cbdcf2; }"
+        "textview { background: #ffffff; color: #172033; }";
+
+    gtk_css_provider_load_from_data(css, style, -1, NULL);
+    gtk_style_context_add_provider_for_screen(
+        gdk_screen_get_default(),
+        GTK_STYLE_PROVIDER(css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_container_set_border_width(GTK_CONTAINER(root), 16);
     gtk_container_add(GTK_CONTAINER(window), root);
+
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_box_pack_start(GTK_BOX(root), header, FALSE, FALSE, 0);
 
     GtkWidget *title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(title),
-        "<span size='x-large' weight='bold'>Interactive Deadlock Simulation System</span>");
-    gtk_box_pack_start(GTK_BOX(root), title, FALSE, FALSE, 0);
+        "<span size='xx-large' weight='bold' foreground='#17365d'>"
+        "INTERACTIVE DEADLOCK SIMULATION SYSTEM</span>");
+    gtk_box_pack_start(GTK_BOX(header), title, FALSE, FALSE, 0);
 
-    GtkWidget *columns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    GtkWidget *subtitle = gtk_label_new(
+        "OPERATING SYSTEMS  |  BANKER'S ALGORITHM  |  DEADLOCK DETECTION");
+    gtk_box_pack_start(GTK_BOX(header), subtitle, FALSE, FALSE, 0);
+
+    GtkWidget *status = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(status),
+        "<span weight='bold' foreground='#16803c'>"
+        "● SYSTEM STATUS: READY</span>");
+    gtk_box_pack_start(GTK_BOX(root), status, FALSE, FALSE, 5);
+
+    GtkWidget *columns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
     gtk_box_pack_start(GTK_BOX(root), columns, TRUE, TRUE, 0);
 
-    GtkWidget *left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_size_request(left, 450, -1);
-    gtk_box_pack_start(GTK_BOX(columns), left, TRUE, TRUE, 0);
+    /* LEFT SIDE */
+    /* LEFT SIDE - SCROLLABLE */
+    GtkWidget *left_scroll = gtk_scrolled_window_new(NULL, NULL);
 
-    GtkWidget *controls = gtk_frame_new("Simulation Controls");
-    gtk_box_pack_start(GTK_BOX(left), controls, FALSE, FALSE, 0);
-    GtkWidget *control_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7);
-    gtk_container_set_border_width(GTK_CONTAINER(control_box), 10);
-    gtk_container_add(GTK_CONTAINER(controls), control_box);
+    gtk_scrolled_window_set_policy(
+        GTK_SCROLLED_WINDOW(left_scroll),
+        GTK_POLICY_NEVER,
+        GTK_POLICY_AUTOMATIC
+    );
 
-    GtkWidget *b = gtk_button_new_with_label("Check System Safety");
-    g_signal_connect(b, "clicked", G_CALLBACK(safety_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(control_box), b, FALSE, FALSE, 0);
+    gtk_widget_set_size_request(left_scroll, 570, -1);
+    gtk_box_pack_start(GTK_BOX(columns), left_scroll, TRUE, TRUE, 0);
 
-    b = gtk_button_new_with_label("Detect Deadlock");
-    g_signal_connect(b, "clicked", G_CALLBACK(detect_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(control_box), b, FALSE, FALSE, 0);
+    GtkWidget *left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_container_add(GTK_CONTAINER(left_scroll), left);
 
-    GtkWidget *request_frame = gtk_frame_new("Request Resources");
-    gtk_box_pack_start(GTK_BOX(control_box), request_frame, FALSE, FALSE, 0);
-    GtkWidget *request_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-    gtk_container_set_border_width(GTK_CONTAINER(request_box), 8);
+    GtkWidget *controls_frame = gtk_frame_new("Simulation Controls");
+    gtk_box_pack_start(GTK_BOX(left), controls_frame, FALSE, FALSE, 0);
+
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 10);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 12);
+    gtk_container_add(GTK_CONTAINER(controls_frame), grid);
+
+    GtkWidget *b;
+
+#define ADD_BUTTON(label, callback, col, row) \
+    b = gtk_button_new_with_label(label); \
+    gtk_widget_set_hexpand(b, TRUE); \
+    g_signal_connect(b, "clicked", G_CALLBACK(callback), NULL); \
+    gtk_grid_attach(GTK_GRID(grid), b, col, row, 1, 1)
+
+    ADD_BUTTON("Create Processes", create_processes_clicked, 0, 0);
+    ADD_BUTTON("Create Resources", create_resources_clicked, 1, 0);
+
+    ADD_BUTTON("Set Allocation", set_allocation_clicked, 0, 1);
+    ADD_BUTTON("Set Maximum", set_maximum_clicked, 1, 1);
+
+    ADD_BUTTON("Show Need", show_need_clicked, 0, 2);
+    ADD_BUTTON("Request Resources", request_clicked, 1, 2);
+
+    ADD_BUTTON("Banker's Algorithm", safety_clicked, 0, 3);
+    ADD_BUTTON("Detect Deadlock", detect_clicked, 1, 3);
+
+    ADD_BUTTON("Recover / Terminate", recover_clicked, 0, 4);
+    ADD_BUTTON("Record Waiting Request", waiting_request_clicked, 1, 4);
+
+    ADD_BUTTON("Show System Status", system_status_clicked, 0, 5);
+    ADD_BUTTON("Refresh Graph", refresh_graph_clicked, 1, 5);
+
+    ADD_BUTTON("Clear Output", clear_output_clicked, 0, 6);
+    ADD_BUTTON("Exit", exit_clicked, 1, 6);
+
+#undef ADD_BUTTON
+
+    /* RESOURCE REQUEST */
+    GtkWidget *request_frame = gtk_frame_new("Resource Request");
+    gtk_box_pack_start(GTK_BOX(left), request_frame, FALSE, FALSE, 0);
+
+    GtkWidget *request_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(request_box), 10);
     gtk_container_add(GTK_CONTAINER(request_frame), request_box);
 
     process_combo = gtk_combo_box_text_new();
     for (int p = 0; p < process_count; p++) {
         char name[16];
         snprintf(name, sizeof(name), "P%d", p);
-        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(process_combo), name);
+        gtk_combo_box_text_append_text(
+            GTK_COMBO_BOX_TEXT(process_combo), name);
     }
     gtk_combo_box_set_active(GTK_COMBO_BOX(process_combo), 0);
-    gtk_box_pack_start(GTK_BOX(request_box), process_combo, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(request_box), process_combo, TRUE, TRUE, 0);
 
-    GtkWidget *spin_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_box_pack_start(GTK_BOX(request_box), spin_box, FALSE, FALSE, 0);
     for (int r = 0; r < resource_count; r++) {
         char label[16];
         snprintf(label, sizeof(label), "R%d", r);
-        gtk_box_pack_start(GTK_BOX(spin_box),
+        gtk_box_pack_start(GTK_BOX(request_box),
                            gtk_label_new(label), FALSE, FALSE, 0);
+
         req_spin[r] = GTK_SPIN_BUTTON(
-            gtk_spin_button_new_with_range(0, 10, 1));
-        gtk_spin_button_set_value(req_spin[r], 0);
-        gtk_box_pack_start(GTK_BOX(spin_box),
-                           GTK_WIDGET(req_spin[r]), TRUE, TRUE, 0);
+            gtk_spin_button_new_with_range(0, 100, 1));
+        gtk_box_pack_start(GTK_BOX(request_box),
+                           GTK_WIDGET(req_spin[r]), FALSE, FALSE, 0);
     }
 
-    b = gtk_button_new_with_label("Submit Resource Request");
-    g_signal_connect(b, "clicked", G_CALLBACK(request_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(request_box), b, FALSE, FALSE, 0);
+    /* RECOVERY */
+    GtkWidget *recovery_frame = gtk_frame_new("Process Recovery");
+    gtk_box_pack_start(GTK_BOX(left), recovery_frame, FALSE, FALSE, 0);
 
-    GtkWidget *recovery_frame = gtk_frame_new("Recovery");
-    gtk_box_pack_start(GTK_BOX(control_box), recovery_frame, FALSE, FALSE, 0);
-    GtkWidget *recovery_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_container_set_border_width(GTK_CONTAINER(recovery_box), 8);
+    GtkWidget *recovery_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(recovery_box), 10);
     gtk_container_add(GTK_CONTAINER(recovery_frame), recovery_box);
 
     recover_combo = gtk_combo_box_text_new();
     for (int p = 0; p < process_count; p++) {
         char name[16];
         snprintf(name, sizeof(name), "P%d", p);
-        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(recover_combo), name);
+        gtk_combo_box_text_append_text(
+            GTK_COMBO_BOX_TEXT(recover_combo), name);
     }
     gtk_combo_box_set_active(GTK_COMBO_BOX(recover_combo), 0);
     gtk_box_pack_start(GTK_BOX(recovery_box), recover_combo, TRUE, TRUE, 0);
@@ -535,23 +840,121 @@ int main(int argc, char **argv)
     g_signal_connect(b, "clicked", G_CALLBACK(recover_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(recovery_box), b, TRUE, TRUE, 0);
 
+
+    /* RESOURCE CONFIGURATION */
+    GtkWidget *matrix_frame = gtk_frame_new("Resource Configuration");
+    gtk_box_pack_start(GTK_BOX(left), matrix_frame, FALSE, FALSE, 0);
+
+    GtkWidget *matrix_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(matrix_scroll),
+                                   GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(matrix_scroll, -1, 240);
+    gtk_container_add(GTK_CONTAINER(matrix_frame), matrix_scroll);
+
+    GtkWidget *matrix_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_container_set_border_width(GTK_CONTAINER(matrix_box), 8);
+    gtk_container_add(GTK_CONTAINER(matrix_scroll), matrix_box);
+
+    GtkWidget *matrix_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(matrix_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(matrix_grid), 6);
+    gtk_box_pack_start(GTK_BOX(matrix_box), matrix_grid, FALSE, FALSE, 0);
+
+    gtk_grid_attach(GTK_GRID(matrix_grid), gtk_label_new("Process"),
+                    0, 0, 1, 1);
+
+    for (int r = 0; r < resource_count; r++) {
+        char label[16];
+        snprintf(label, sizeof(label), "R%d", r);
+        gtk_grid_attach(GTK_GRID(matrix_grid), gtk_label_new(label),
+                        r + 1, 0, 1, 1);
+    }
+
+    gtk_grid_attach(GTK_GRID(matrix_grid), gtk_label_new("Allocation"),
+                    0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(matrix_grid), gtk_label_new("Maximum"),
+                    0, process_count + 2, 1, 1);
+
+    for (int p = 0; p < process_count; p++) {
+        char label[16];
+        snprintf(label, sizeof(label), "P%d", p);
+
+        gtk_grid_attach(GTK_GRID(matrix_grid), gtk_label_new(label),
+                        0, p + 2, 1, 1);
+        gtk_grid_attach(GTK_GRID(matrix_grid), gtk_label_new(label),
+                        0, process_count + p + 3, 1, 1);
+
+        for (int r = 0; r < resource_count; r++) {
+            allocation_spin[p][r] = GTK_SPIN_BUTTON(
+                gtk_spin_button_new_with_range(0, 100, 1));
+            maximum_spin[p][r] = GTK_SPIN_BUTTON(
+                gtk_spin_button_new_with_range(0, 100, 1));
+
+            gtk_spin_button_set_value(allocation_spin[p][r],
+                                      allocation[p * MAXR + r]);
+            gtk_spin_button_set_value(maximum_spin[p][r],
+                                      maximum[p * MAXR + r]);
+
+            gtk_grid_attach(GTK_GRID(matrix_grid),
+                            GTK_WIDGET(allocation_spin[p][r]),
+                            r + 1, p + 2, 1, 1);
+            gtk_grid_attach(GTK_GRID(matrix_grid),
+                            GTK_WIDGET(maximum_spin[p][r]),
+                            r + 1, process_count + p + 3, 1, 1);
+        }
+    }
+
+    GtkWidget *available_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_box_pack_start(GTK_BOX(matrix_box), available_row, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(available_row), gtk_label_new("Available:"),
+                       FALSE, FALSE, 0);
+
+    for (int r = 0; r < resource_count; r++) {
+        char label[16];
+        snprintf(label, sizeof(label), "R%d", r);
+
+        gtk_box_pack_start(GTK_BOX(available_row), gtk_label_new(label),
+                           FALSE, FALSE, 0);
+
+        available_spin[r] = GTK_SPIN_BUTTON(
+            gtk_spin_button_new_with_range(0, 100, 1));
+        gtk_spin_button_set_value(available_spin[r], available[r]);
+
+        gtk_box_pack_start(GTK_BOX(available_row),
+                           GTK_WIDGET(available_spin[r]), FALSE, FALSE, 0);
+    }
+
+    b = gtk_button_new_with_label("Apply Configuration");
+    g_signal_connect(b, "clicked", G_CALLBACK(apply_matrix_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(matrix_box), b, FALSE, FALSE, 0);
+
+    /* RESOURCE ALLOCATION GRAPH */
     GtkWidget *graph_frame = gtk_frame_new("Resource Allocation Graph");
     gtk_box_pack_start(GTK_BOX(left), graph_frame, TRUE, TRUE, 0);
+
     graph_area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(graph_area, 420, 320);
+    gtk_widget_set_size_request(graph_area, 550, 340);
     gtk_container_add(GTK_CONTAINER(graph_frame), graph_area);
     g_signal_connect(graph_area, "draw", G_CALLBACK(draw_graph), NULL);
 
+    /* RIGHT SIDE: OUTPUT */
     GtkWidget *right_frame = gtk_frame_new("Simulation Output");
+    gtk_widget_set_size_request(right_frame, 430, -1);
     gtk_box_pack_start(GTK_BOX(columns), right_frame, TRUE, TRUE, 0);
+
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
 
     output = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(output), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(output), FALSE);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(output), TRUE);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(output), GTK_WRAP_WORD_CHAR);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(output), 12);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(output), 12);
 
-    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_container_add(GTK_CONTAINER(scroll), output);
     gtk_container_add(GTK_CONTAINER(right_frame), scroll);
 
