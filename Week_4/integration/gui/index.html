@@ -283,13 +283,20 @@ $("initialize").addEventListener("click",async()=>{
   } catch(e) { notify(e.message,"error"); }
 });
 $("checkSafety").addEventListener("click",async()=>{
-  try { ensureInit(); const result=await api({action:"detect"}); renderState(result.state);
-    const res=await fetch(API+"/api/health");
-    if(!res.ok) throw new Error("Backend is unavailable.");
-    // Safety is returned by the state-changing API; use a harmless zero request only when needed.
-    const response=await api({action:"wait",process:0,request:Array(resourceCount).fill(0)});
-    renderSafety(response.safety); notify("Safety check refreshed.");
-  } catch(e) { notify(e.message,"error"); }
+  try {
+    ensureInit();
+    const response = await fetch(API + "/api/safety");
+    const result = await response.json();
+
+    if(!response.ok) {
+      throw new Error(result.error || "Safety check failed.");
+    }
+
+    renderSafety(result);
+    notify("Banker's safety check completed.");
+  } catch(e) {
+    notify(e.message, "error");
+  }
 });
 $("grant").addEventListener("click",async()=>{
   try {
