@@ -60,12 +60,27 @@ int ipc_receive(
         return 0;
     }
 
-    return mq_receive(
+    ssize_t bytes_received;
+
+    bytes_received = mq_receive(
         queue,
         (char *)message,
         sizeof(IPCMessage),
         NULL
-    ) == (ssize_t)sizeof(IPCMessage);
+    );
+
+    if (bytes_received == -1)
+    {
+        return 0;
+    }
+
+    if (bytes_received != (ssize_t)sizeof(IPCMessage))
+    {
+        fprintf(stderr, "IPC: received message has an invalid size.\n");
+        return 0;
+    }
+
+    return 1;
 }
 
 void ipc_remove_queues(void)

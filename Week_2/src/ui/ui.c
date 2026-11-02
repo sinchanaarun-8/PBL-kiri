@@ -215,10 +215,8 @@ int main(void)
         }
 
         /*
-         * Display the logical command.
-         *
-         * In a later version, this is where the command
-         * can be passed to the Core Process through IPC.
+         * Send the selected command to the Core Process
+         * through the UI-to-Core POSIX Message Queue.
          */
         printf("\nCommand: %s\n", command_to_string(command));
         message.type = IPC_MSG_COMMAND;
@@ -237,6 +235,15 @@ int main(void)
             perror("Failed to receive response from Core");
             break;
         }
+
+        if (response.type != IPC_MSG_RESPONSE ||
+            response.command != (int)command)
+        {
+            fprintf(stderr, "Invalid response received from Core.\n");
+            break;
+        }
+
+        response.text[IPC_TEXT_SIZE - 1] = '\0';
 
         printf(
             "Core response: %s\n",
