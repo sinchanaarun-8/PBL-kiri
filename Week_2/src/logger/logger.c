@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -56,4 +57,3 @@ void logger_close(void)
         log_file = NULL;
     }
 }
-

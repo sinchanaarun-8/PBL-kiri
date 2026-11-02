@@ -1,66 +1,113 @@
-#include <fcntl.h>
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include "logger.h"
-#include "../IPC/ipc.h"
 
 int main(void)
 {
-    mqd_t core_to_logger;
-    IPCMessage message;
+    int server_fd, client_fd;
+    struct sockaddr_un address;
+    char buffer[LOGGER_BUFFER_SIZE];
 
     printf("Logger process starting...\n");
 
     if (!logger_init())
     {
-        fprintf(stderr, "Failed to initialize logger.\n");
-        return EXIT_FAILURE;
+        printf("Logger initialization failed.\n");
+        return 1;
     }
 
-    core_to_logger = ipc_open_queue(
-        CORE_TO_LOGGER_QUEUE,
-        O_RDONLY,
-        0
-    );
+    server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 
-    if (core_to_logger == (mqd_t)-1)
+    if (server_fd == -1)
     {
-        perror("Failed to open Core -> Logger queue");
+        perror("Socket creation failed");
         logger_close();
-        return EXIT_FAILURE;
+        return 1;
     }
 
-    printf("Logger IPC queue ready.\n");
-    printf("Logger waiting for messages...\n");
+    unlink(LOGGER_SOCKET_PATH);
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, LOGGER_SOCKET_PATH);
+
+    if (bind(server_fd, (struct sockaddr *)&address,
+             sizeof(address)) == -1)
+    {
+        perror("Bind failed");
+        close(server_fd);
+        logger_close();
+        return 1;
+    }
+
+    if (listen(server_fd, 5) == -1)
+    {
+        perror("Listen failed");
+        close(server_fd);
+        unlink(LOGGER_SOCKET_PATH);
+        logger_close();
+        return 1;
+    }
+
+    printf("Logger waiting for Core process...\n");
 
     while (1)
     {
-        if (!ipc_receive(core_to_logger, &message))
+        client_fd = accept(server_fd, NULL, NULL);
+
+        if (client_fd == -1)
         {
-            perror("Failed to receive logger message");
+            perror("Accept failed");
             break;
         }
 
-        if (message.type != IPC_MSG_LOG)
+        printf("Core process connected.\n");
+
+        while (1)
         {
-            continue;
+            int bytes = recv(client_fd, buffer,
+                             sizeof(buffer) - 1, 0);
+
+            if (bytes <= 0)
+                break;
+
+            buffer[bytes] = '\0';
+
+            printf("Received: %s\n", buffer);
+
+            if (strcmp(buffer, "EXIT") == 0)
+            {
+                printf("Logger shutting down.\n");
+
+                close(client_fd);
+                close(server_fd);
+                unlink(LOGGER_SOCKET_PATH);
+                logger_close();
+
+                return 0;
+            }
+
+            if (strncmp(buffer, "ERROR:", 6) == 0)
+                log_error(buffer + 6);
+            else if (strncmp(buffer, "WARNING:", 8) == 0)
+                log_warning(buffer + 8);
+            else
+                log_info(buffer);
         }
 
-        printf("Logger received: %s\n", message.text);
-
-        log_info(message.text);
-
-        if (message.command == IPC_CMD_EXIT)
-        {
-            break;
-        }
+        close(client_fd);
+        printf("Core process disconnected.\n");
     }
 
-    mq_close(core_to_logger);
+    close(server_fd);
+    unlink(LOGGER_SOCKET_PATH);
     logger_close();
 
-    printf("Logger process stopped.\n");
-
-    return EXIT_SUCCESS;
+    return 0;
 }

@@ -1,76 +1,78 @@
-# Member 3 — **Josna** — Logger Process
+# Member 3 — Josna — Logger Process
 
-## Responsibility
+## 1. Responsibility
 
-Member 3 is responsible for the Logging Process of the PBL Process Simulator.
+Member 3 is responsible for developing the Logging Process of the PBL Process Simulator.
 
-The Logger is an independent process whose main responsibility is to receive log information and record it into a log file.
+The Logger is an independent process responsible for receiving log messages and recording them in a log file.
 
-The Logger does not directly access Core variables such as CPU, memory, stack, or queue.
+It communicates using **UNIX Domain Sockets** and does not directly access Core variables such as CPU, memory, stack, or queue.
 
 ---
 
-## Logger Responsibilities
+## 2. Logger Responsibilities
 
 The Logger is responsible for:
 
 - Initializing the logging system.
-- Opening/creating the log file.
+- Creating and opening the log file.
 - Recording INFO messages.
 - Recording WARNING messages.
 - Recording ERROR messages.
-- Receiving log events from the communication mechanism.
-- Writing received events into the log file.
-- Handling non-log IPC messages.
+- Receiving log messages through UNIX Domain Sockets.
+- Writing received messages into `simulator.log`.
+- Handling client disconnections.
 - Closing the log file properly.
 - Cleaning up resources when the Logger terminates.
 
 ---
 
-## Logger Architecture
+## 3. Logger Architecture
 
-The implemented communication flow is:
+The communication flow is:
 
 ```text
-Core Process
-     |
-     | Log Message
-     v
-POSIX Message Queue
-/pbl_core_to_logger
-     |
-     v
-Logger Process
-     |
-     v
-simulator.log
+       Core Process
+            |
+            | Log Messages
+            v
+     UNIX Domain Socket
+            |
+            v
+      Logger Process
+            |
+            v
+       simulator.log
 ```
 
-The Logger does not directly access Core memory or Core variables.
+The Logger operates independently and receives information through the socket connection.
+
+It does not directly access Core memory or Core variables.
 
 ---
 
-## Files
+## 4. Files and Their Purpose
 
 ### logger.h
 
-Contains the public Logger function declarations.
+Contains the public Logger function declarations and shared definitions.
 
-Current functions include:
+Functions include:
 
-- `logger_init()` — Initializes the Logger.
+- `logger_init()` — Initializes the logging system.
 - `log_info()` — Records an INFO message.
 - `log_warning()` — Records a WARNING message.
 - `log_error()` — Records an ERROR message.
-- `logger_close()` — Closes the Logger and releases resources.
+- `logger_close()` — Closes the log file and releases resources.
+- `logger_send_message()` — Sends a message to the Logger through a UNIX Domain Socket.
 
 ### logger.c
 
 Contains the implementation of the logging functions and log file handling.
 
-It is responsible for:
+Responsibilities:
 
-- Creating/opening the log file.
+- Creating and opening the log file.
 - Writing INFO messages.
 - Writing WARNING messages.
 - Writing ERROR messages.
@@ -81,22 +83,37 @@ It is responsible for:
 
 Contains the process-level Logger functionality.
 
-It runs the Logger as an independent process and:
+Responsibilities:
 
-- Initializes the Logger.
-- Opens the Core-to-Logger POSIX Message Queue.
-- Waits for IPC messages.
-- Processes log messages received from Core.
-- Handles the Logger exit message.
-- Closes the IPC queue.
-- Closes the log file.
-- Terminates the Logger process cleanly.
+- Running the Logger as an independent process.
+- Creating a UNIX Domain Socket server.
+- Binding and listening for client connections.
+- Accepting client connections.
+- Receiving and processing log messages.
+- Writing received messages into the log file.
+- Handling client disconnections.
+- Cleaning up socket resources.
+
+### logger_client.c
+
+Contains the client-side socket communication functionality.
+
+Responsibilities:
+
+- Creating a UNIX Domain Socket client.
+- Connecting to the Logger server.
+- Sending log messages.
+- Closing the socket connection after sending messages.
+
+### test_logger_client.c
+
+Used to test socket communication independently by sending sample INFO, WARNING, and ERROR messages to the Logger server.
 
 ---
 
-## Log Levels
+## 5. Log Levels
 
-The Logger supports three basic log levels:
+The Logger supports three basic log levels.
 
 ### INFO
 
@@ -130,10 +147,10 @@ Example:
 
 ---
 
-## Example Log Output
+## 6. Example Log Output
 
 ```text
-[INFO] Logger started
+[INFO] Program started
 [INFO] Instruction executed: LOAD
 [INFO] Instruction executed: ADD
 [WARNING] Stack is almost full
@@ -141,85 +158,88 @@ Example:
 [INFO] Program completed
 ```
 
-The examples above illustrate the supported log levels. The actual integrated log output depends on the messages sent by the Core process.
+The examples illustrate the supported log levels. Actual entries depend on the messages received by the Logger.
 
 ---
 
-## IPC Communication
+## 7. IPC Communication — UNIX Domain Sockets
 
-The Logger communicates with the Core using POSIX Message Queues.
+The Logger uses UNIX Domain Sockets for communication.
 
-The queue used by the Logger is:
+The socket path is:
 
 ```text
-/pbl_core_to_logger
+/tmp/pbl_logger.sock
 ```
 
-The Core sends log messages to this queue, and the Logger receives them.
+Communication process:
 
-The Logger processes messages of the appropriate log-message type and records the received information in the log file.
+1. The Logger creates a UNIX Domain Socket.
+2. It binds the socket to the specified path.
+3. It listens for incoming client connections.
+4. The client connects to the Logger.
+5. The client sends log messages.
+6. The Logger receives and processes the messages.
+7. The Logger records the messages in `simulator.log`.
+
+UNIX Domain Sockets provide communication between processes on the same system.
 
 ---
 
-## Development Status
+## 8. Testing
 
-### Completed
+The Logger socket communication was tested using a separate test client.
 
-- Created Logger component directory.
-- Created `logger.c`.
+### Test Messages
+
+```text
+INFO: Program started
+WARNING: Low memory
+ERROR: Invalid instruction
+```
+
+### Testing Procedure
+
+1. Compile and start the Logger server.
+2. Open another terminal.
+3. Compile and run the test client.
+4. Verify that the Logger receives the messages.
+5. Check the generated `simulator.log` file.
+
+### Test Result
+
+The Logger successfully received the test messages through UNIX Domain Sockets and processed them according to their log levels.
+
+---
+
+## 9. Development Status
+
+The following functionalities have been implemented:
+
+- Created the Logger component directory.
 - Created `logger.h`.
+- Created `logger.c`.
 - Created `logger_process.c`.
+- Created `logger_client.c`.
+- Created `test_logger_client.c`.
 - Implemented Logger initialization.
-- Implemented log file creation/opening.
+- Implemented log file creation and opening.
 - Implemented INFO logging.
 - Implemented WARNING logging.
 - Implemented ERROR logging.
 - Implemented Logger cleanup.
-- Implemented Logger as an independent process.
-- Implemented POSIX Message Queue communication.
-- Implemented Core → Logger communication.
-- Implemented receiving log messages from the Core process.
-- Implemented handling of non-log IPC messages.
-- Implemented clean Logger termination.
-- Verified Core → Logger communication during integrated execution.
-- Verified log file generation.
-
-### Remaining / Not Separately Verified
-
-- Detailed process failure and recovery handling has not been separately implemented or verified.
-- Additional Logger-specific stress testing has not been separately performed.
+- Implemented the Logger as an independent process.
+- Implemented UNIX Domain Socket server functionality.
+- Implemented UNIX Domain Socket client functionality.
+- Tested socket communication using a separate test client.
 
 ---
 
-## Verified Integrated Execution
-
-The Logger was verified as part of the integrated three-process simulator.
-
-During the integrated execution, the Logger successfully received Core messages corresponding to the tested commands.
-
-Example:
-
-```text
-Core received command: 1
-Logger received: Core received command: 1
-```
-
-The Logger also received the exit-related message:
-
-```text
-Logger received: Core received command: 5
-Logger process stopped.
-```
-
-The simulator log file contained Core command log entries, confirming that the Core-to-Logger communication and log recording were functioning during the integrated execution.
-
----
-
-## Architecture Rule
+## 10. Architecture Rule
 
 The Logger must remain independent from the Core.
 
-The following is NOT allowed:
+The following architecture is NOT allowed:
 
 ```text
 Core Memory → Logger
@@ -228,35 +248,35 @@ Core Memory → Logger
 The correct architecture is:
 
 ```text
-Core
-  |
-  | Message
-  v
-POSIX Message Queue
-  |
-  v
-Logger
-  |
-  v
-Log File
+Core Process
+     |
+     | Log Message
+     v
+UNIX Domain Socket
+     |
+     v
+Logger Process
+     |
+     v
+simulator.log
 ```
 
-The Logger only receives information through IPC and records it.
+The Logger receives information only through IPC and records it.
 
 It does not directly access:
 
-- CPU state
-- Memory state
-- Stack state
-- Queue state
-- Core program state
+- CPU state.
+- Memory state.
+- Stack state.
+- Queue state.
+- Core program state.
 
 ---
 
-## Conclusion
+## 11. Conclusion
 
-The Logger Process has been implemented as an independent process and integrated with the Core using POSIX Message Queues.
+The Logger Process has been developed as an independent process using UNIX Domain Sockets for communication.
 
-The Logger successfully receives Core log messages, records them in the simulator log file, and terminates cleanly when the simulator exits.
+It supports INFO, WARNING, and ERROR messages and records them in `simulator.log`.
 
-This maintains the required separation between the Core execution logic and the Logging Process.
+The socket communication has been tested independently using a test client. The implementation maintains separation between the Core execution logic and the Logging Process.
