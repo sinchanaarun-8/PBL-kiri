@@ -67,7 +67,7 @@ int main(void)
             break;
         }
 
-        printf("Core process connected.\n");
+
 
         while (1)
         {
@@ -79,7 +79,7 @@ int main(void)
 
             buffer[bytes] = '\0';
 
-            printf("Received: %s\n", buffer);
+
 
             if (strcmp(buffer, "EXIT") == 0)
             {
@@ -102,7 +102,7 @@ int main(void)
         }
 
         close(client_fd);
-        printf("Core process disconnected.\n");
+
     }
 
     close(server_fd);

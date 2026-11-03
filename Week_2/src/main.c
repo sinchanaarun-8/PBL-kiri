@@ -16,11 +16,10 @@ int main(void)
 
     if (core_pid == 0)
     {
-       execl("./build/core_process", "core_process", (char *)NULL);
+       execl("./Week_2/build/core_process", "core_process", (char *)NULL);
         perror("Failed to start Core");
         exit(EXIT_FAILURE);
     }
-
     if (core_pid < 0)
     {
         perror("Failed to fork Core");
@@ -33,7 +32,7 @@ int main(void)
 
     if (logger_pid == 0)
     {
-        execl("./build/logger_process", "logger_process", (char *)NULL);
+        execl("./Week_2/build/logger_process", "logger_process", (char *)NULL);
         perror("Failed to start Logger");
         exit(EXIT_FAILURE);
     }
@@ -50,7 +49,7 @@ int main(void)
 
     if (ui_pid == 0)
     {
-        execl("./build/ui_process", "ui_process", (char *)NULL);
+        execl("./Week_2/build/ui_process", "ui_process", (char *)NULL);
         perror("Failed to start UI");
         exit(EXIT_FAILURE);
     }

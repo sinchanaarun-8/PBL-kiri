@@ -1,35 +1,35 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
-LDFLAGS = -lrt
+LDFLAGS = -lrt -pthread
 
 BUILD_DIR = Week_2/build
 
 CORE_SRCS = \
-	Week_2/src/Core/core_process.c \
-	Week_2/src/Core/core.c \
-	Week_2/src/Core/cpu.c \
-	Week_2/src/Core/memory.c \
-	Week_2/src/Core/queue.c \
-	Week_2/src/Core/stack.c \
-	Week_2/src/IPC/ipc.c
+    Week_2/src/Core/core_process.c \
+    Week_2/src/Core/core.c \
+    Week_2/src/Core/cpu.c \
+    Week_2/src/Core/memory.c \
+    Week_2/src/Core/queue.c \
+    Week_2/src/Core/stack.c \
+    Week_2/src/Core/shared_memory.c \
+    Week_2/src/IPC/ipc.c
 
 LOGGER_SRCS = \
-	Week_2/src/logger/logger_process.c \
-	Week_2/src/logger/logger.c \
-	Week_2/src/IPC/ipc.c
+    Week_2/src/logger/logger_process.c \
+    Week_2/src/logger/logger.c
 
 UI_SRCS = \
-	Week_2/src/ui/ui.c \
-	Week_2/src/IPC/ipc.c
+    Week_2/src/ui/ui.c \
+    Week_2/src/IPC/ipc.c
 
 MAIN_SRC = Week_2/src/main.c
 
 .PHONY: all clean
 
 all: $(BUILD_DIR)/core_process \
-	$(BUILD_DIR)/logger_process \
-	$(BUILD_DIR)/ui_process \
-	$(BUILD_DIR)/pbl_simulator
+     $(BUILD_DIR)/logger_process \
+     $(BUILD_DIR)/ui_process \
+     $(BUILD_DIR)/pbl_simulator
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

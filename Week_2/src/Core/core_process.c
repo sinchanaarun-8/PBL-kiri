@@ -48,7 +48,7 @@ int main(void)
     int running = 1;
     char log_text[LOGGER_BUFFER_SIZE];
 
-    printf("Core process starting...\\n");
+    printf("Core process starting...\n");
     if (!core_shm_create(&shm)) {
         fprintf(stderr, "Could not initialize POSIX shared memory.\\n");
         return EXIT_FAILURE;
@@ -119,6 +119,7 @@ int main(void)
     core_shm_unlink();
 
     send_log("Core process stopped");
+    send_log("EXIT");
     printf("Core process stopped; shared memory cleaned up.\\n");
     return EXIT_SUCCESS;
 }
