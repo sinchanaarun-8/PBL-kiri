@@ -1,99 +1,114 @@
 # IPC Design and Justification
 
-## Selected IPC Mechanism
+## Overview
 
-The simulator uses **POSIX Message Queues** for inter-process communication.
+The simulator consists of three independent processes: UI, Core and Logger.
 
-The IPC layer provides three message queues for communication between the UI, Core and Logging processes.
+The implementation uses three IPC mechanisms:
 
-## Why POSIX Message Queues?
+1. POSIX Message Queues
+2. POSIX Shared Memory
+3. UNIX Domain Sockets
 
-POSIX Message Queues were selected because the simulator requires structured communication between independent processes.
+Each mechanism is selected according to its communication purpose.
 
-Advantages for this project:
+## 1. POSIX Message Queues
 
-- Supports communication between independent processes.
-- Messages are maintained by the operating system.
-- Provides structured message-based communication.
-- Separates communication between the UI, Core and Logger processes.
-- Supports blocking send/receive operations suitable for command processing.
-- Allows different message types to be exchanged using a common message structure.
+POSIX Message Queues are used for communication between UI and Core.
 
-The simulator uses the following message types:
+Two active message queues are implemented:
+
+| Queue | Direction | Purpose |
+|---|---|---|
+| /pbl_ui_to_core | UI → Core | Sends commands from UI to Core |
+| /pbl_core_to_ui | Core → UI | Sends responses from Core to UI |
+
+### Why POSIX Message Queues?
+
+- Support communication between independent processes.
+- Provide structured message-based communication.
+- Allow blocking send and receive operations.
+- Separate command and response communication.
+
+The IPC message structure contains fields for message type, command, status and text.
+
+## 2. POSIX Shared Memory
+
+The simulator uses POSIX Shared Memory for shared Core state.
+
+- Shared memory name: /pbl_core_shared_memory
+- Allows participating processes to access shared data.
+- A process-shared mutex protects shared data from simultaneous access.
+
+### Why Shared Memory?
+
+- Provides a shared memory region between processes.
+- Avoids repeatedly sending shared data through messages.
+- Supports efficient access to shared state.
+- Requires synchronization to prevent conflicting access.
+
+## 3. UNIX Domain Sockets
+
+UNIX Domain Sockets are used for communication from Core to Logger.
+
+- Socket path: /tmp/pbl_logger.sock
+- Core sends log messages to Logger.
+- Logger receives the messages and records them in logs/simulator.log.
+
+### Why UNIX Domain Sockets?
+
+- Support communication between local processes.
+- Provide reliable two-way socket communication.
+- Are suitable for transferring log messages between Core and Logger.
+- Avoid requiring network communication.
+
+## Alternatives Considered
+
+### Pipes
+Pipes provide simple communication between processes but are stream-oriented and require additional handling for structured messages.
+
+### FIFOs
+FIFOs allow unrelated processes to communicate but do not provide the same message-oriented structure as POSIX Message Queues.
+
+### Signals
+Signals are useful for notifications and process control but are unsuitable for transferring structured commands and log messages.
+
+## Communication Flow
 
 ```text
-IPC_MSG_COMMAND
-IPC_MSG_RESPONSE
-IPC_MSG_LOG
+                  +------------------+
+                  |        UI        |
+                  +------------------+
+                           |
+                           | POSIX Message Queue
+                           | /pbl_ui_to_core
+                           v
+                  +------------------+
+                  |       CORE       |
+                  +------------------+
+                     |            |
+                     |            |
+       POSIX Message Queue     UNIX Domain Socket
+       /pbl_core_to_ui         /tmp/pbl_logger.sock
+                     |            |
+                     v            v
+                  +------+  +------------------+
+                  |  UI  |  |      LOGGER      |
+                  |Reply |  +------------------+
+                  +------+           |
+                                     v
+                            logs/simulator.log
 
-Alternatives Considered
-Pipes
-Pipes provide simple inter-process communication, but they are stream-oriented and are less convenient for the structured command and response messages used by this simulator.
-FIFOs
-FIFOs allow unrelated processes to communicate, but they provide less message-oriented structure than POSIX Message Queues.
-Shared Memory
-Shared memory can provide high-speed data sharing, but it requires additional synchronization mechanisms. It is unnecessary for the relatively small command, response and log messages used by this simulator.
-Signals
-Signals are useful for notifications and process control, but they are not suitable for transferring structured command and log data.
-Sockets
-Sockets provide powerful local or network communication, but network-style communication is unnecessary for the local simulator processes.
-Queue Design
-The simulator uses three POSIX Message Queues:
-Queue	Direction	Purpose
-/pbl_ui_to_core	UI → Core	Sends commands from the UI to the Core
-/pbl_core_to_ui	Core → UI	Sends responses from the Core to the UI
-/pbl_core_to_logger	Core → Logger	Sends log messages from the Core to the Logger
+             POSIX SHARED MEMORY
+             /pbl_core_shared_memory
+             Shared Core State
+```
+## Communication Flow Details
+1. UI → Core: UI sends commands through /pbl_ui_to_core.
+2. Core → UI: Core sends command responses through /pbl_core_to_ui.
+3. Core shared state: POSIX Shared Memory provides access to shared Core data, protected by a process-shared mutex.
+4. Core → Logger: Core sends log messages through a UNIX Domain Socket. Logger records them in the simulator log.
+## Conclusion
+The simulator demonstrates three IPC mechanisms for different purposes. POSIX Message Queues handle UI-Core command and response communication, POSIX Shared Memory provides shared data access, and UNIX Domain Sockets transfer log messages from Core to Logger.
 
-
-Message Structure
-The IPC system uses a common IPCMessage structure containing:
-type
-command
-status
-text
-
-This allows commands, responses and log messages to be transferred through the message queues.
-Communication Architecture
-                  ┌──────────────────┐
-                  │       UI         │
-                  │  User Interface  │
-                  └────────┬─────────┘
-                           │
-                           │ /pbl_ui_to_core
-                           │ POSIX Message Queue
-                           ▼
-                  ┌──────────────────┐
-                  │      CORE        │
-                  │                  │
-                  │ CPU              │
-                  │ Memory           │
-                  │ Stack            │
-                  │ Queue            │
-                  └───────┬──────────┘
-                          │   │
-          /pbl_core_to_ui     │ /pbl_core_to_logger
-          POSIX MQ            │ POSIX MQ
-                      │       │
-                      ▼       ▼
-               ┌──────────┐  ┌──────────────────┐
-               │    UI    │  │     LOGGER       │
-               │ Response │  │ Simulator Logs   │
-               └──────────┘  └────────┬─────────┘
-                                      │
-                                      ▼
-                              logs/simulator.log
-
-**Communication Flow**
-
-UI → Core
-The UI sends a command to the Core through /pbl_ui_to_core.
-
-Core → UI
-After processing the command, the Core sends a response through /pbl_core_to_ui.
-
-Core → Logger
-The Core sends command information to the Logger through /pbl_core_to_logger.
-The Logger receives the message and records it in the simulator log.
-
-**Conclusion**
-POSIX Message Queues provide a suitable IPC mechanism for this simulator because they allow the three independent processes to exchange structured command, response and log messages while keeping the process responsibilities separated.
+Using these mechanisms demonstrates different approaches to communication and data sharing between independent processes.

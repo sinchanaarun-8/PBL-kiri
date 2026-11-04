@@ -50,13 +50,13 @@ int main(void)
 
     printf("Core process starting...\n");
     if (!core_shm_create(&shm)) {
-        fprintf(stderr, "Could not initialize POSIX shared memory.\\n");
+        fprintf(stderr, "Could not initialize POSIX shared memory.\n");
         return EXIT_FAILURE;
     }
 
     core_init(&shm.ptr->state);
-    printf("Core state initialized in POSIX shared memory.\\n");
-    printf("Shared memory object: %s\\n", CORE_SHM_NAME);
+    printf("Core state initialized in POSIX shared memory.\n");
+    printf("Shared memory object: %s\n", CORE_SHM_NAME);
 
     ui_to_core = ipc_open_queue(UI_TO_CORE_QUEUE, O_RDWR, 1);
     if (ui_to_core == (mqd_t)-1) {
@@ -71,7 +71,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    printf("UI command queues ready. Waiting for commands...\\n");
+    printf("UI command queues ready. Waiting for commands...\n");
     while (running) {
         if (!ipc_receive(ui_to_core, &message)) {
             if (errno == EINTR) continue;
@@ -99,6 +99,7 @@ int main(void)
                      shm.ptr->update_count);
             snprintf(log_text, sizeof(log_text), "Core command %d %s",
                      message.command, response.status ? "completed" : "failed");
+            printf("%s\n", log_text); fflush(stdout);
             send_log(log_text);
         }
 
@@ -120,6 +121,6 @@ int main(void)
 
     send_log("Core process stopped");
     send_log("EXIT");
-    printf("Core process stopped; shared memory cleaned up.\\n");
+    printf("Core process stopped; shared memory cleaned up.\n");
     return EXIT_SUCCESS;
 }

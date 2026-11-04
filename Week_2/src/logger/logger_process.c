@@ -99,6 +99,7 @@ int main(void)
                 log_warning(buffer + 8);
             else
                 log_info(buffer);
+            printf("Logger received: %s\n", buffer); fflush(stdout);
         }
 
         close(client_fd);

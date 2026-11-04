@@ -2,7 +2,7 @@
 
 ## 1. Objective
 
-To verify the functionality of the Core modules and the communication between the UI, Core, and Logger processes using POSIX Message Queues.
+To verify the functionality of the Core modules and the communication between the UI, Core, and Logger processes using POSIX Message Queues, POSIX Shared Memory and UNIX Domain Sockets.
 
 The testing covers:
 
@@ -135,7 +135,7 @@ They are listed separately from the integrated IPC tests because the demonstrate
 Command 1
 ```
 **Expected:**
-The UI sends the LOAD command to the Core process through the UI-to-Core POSIX Message Queue. Core processes the command and sends a response to the UI. Core also generates a log message for the Logger.
+The UI sends the LOAD command to the Core process through the UI-to-Core POSIX Message Queue (/pbl_ui_to_core). Core processes the command and sends a response to the UI. Core also generates a log message for the Logger.
 
 **Observed Result:**
 ```text
@@ -233,10 +233,10 @@ Exit status: 0
 
 ## 9. Core → Logger Verification
 
-The Core process sends log messages to the Logger through:
+The Core process sends log messages to the Logger through a UNIX Domain Socket at:
 
 ```text
-/pbl_core_to_logger
+/tmp/pbl_logger.sock
 ```
 
 The following commands were verified during the integrated execution:
@@ -257,7 +257,7 @@ The Logger successfully received Core messages corresponding to these commands.
 The Logger records received messages in:
 
 ```text
-simulator.log
+logs/simulator.log
 ```
 
 Verified log entries included:
@@ -306,13 +306,13 @@ The Core successfully returned command responses to the UI.
 ```text
 Core
  |
- | /pbl_core_to_logger
- | POSIX Message Queue
+ | /tmp/pbl_logger.sock
+ | UNIX Domain Socket
  v
 Logger
  |
  v
-simulator.log
+logs/simulator.log
 ```
 
 The Logger successfully received Core messages and recorded them in the log file.
@@ -369,13 +369,13 @@ The following operations require separate execution if individual PASS evidence 
 
 The implemented Core modules provide CPU, Memory, Stack, and Queue functionality required by the simulator.
 
-The verified integrated execution confirms successful communication through POSIX Message Queues between:
+The verified integrated execution confirms successful communication through POSIX Message Queues for UI–Core communication and a UNIX Domain Socket for Core–Logger communication:
 
 ```text
 UI → Core
 Core → UI
-Core → Logger
-Logger → simulator.log
+Core → Logger (UNIX Domain Socket)
+Logger → logs/simulator.log
 ```
 
 The integrated simulator successfully processed LOAD, RUN, STOP, and EXIT commands. The Core and Logger processes also terminated successfully.
